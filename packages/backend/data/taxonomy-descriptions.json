@@ -1,0 +1,71 @@
+{
+  "events": {
+    "페이지뷰": {
+      "trigger": "사용자가 새로운 페이지에 진입하여 화면이 로드되었을 때",
+      "description": "웹사이트 내 페이지 조회 행동을 측정하는 이벤트",
+      "note": "기본 페이지 정보(URL, 타이틀 등)와 함께 수집됩니다."
+    },
+    "클릭": {
+      "trigger": "GNB 메뉴 등 웹사이트 내 주요 버튼이나 요소를 클릭했을 때",
+      "description": "사용자의 일반적인 클릭 상호작용을 측정하는 이벤트",
+      "note": "클릭된 요소의 라벨, 카테고리 등의 정보가 함께 수집됩니다."
+    },
+    "배너이동": {
+      "trigger": "메인 배너 영역에서 이전/다음 버튼을 클릭하여 배너를 전환했을 때",
+      "description": "배너 슬라이드 이동 조작을 측정하는 이벤트",
+      "note": "이동 방향(direction) 정보가 함께 수집됩니다."
+    },
+    "장바구니담기": {
+      "trigger": "추천 상품 영역 등에서 장바구니 담기 버튼을 클릭했을 때",
+      "description": "상품을 장바구니에 추가하는 행동을 측정하는 이벤트",
+      "note": "선택한 상품명(label) 정보가 함께 수집됩니다."
+    },
+    "찜하기": {
+      "trigger": "추천 상품 영역 등에서 상품의 찜하기(관심상품 등록) 버튼을 클릭했을 때",
+      "description": "상품을 관심 상품으로 등록하는 행동을 측정하는 이벤트",
+      "note": "선택한 상품명(label) 정보가 함께 수집됩니다."
+    }
+  },
+  "properties": {
+    "platform": {
+      "description": "서비스가 실행되는 플랫폼 환경 정보",
+      "note": "예시: PC, Mobile 등"
+    },
+    "page_location": {
+      "description": "현재 페이지의 전체 URL 주소",
+      "note": "프로토콜과 도메인을 포함한 전체 경로입니다."
+    },
+    "page_path": {
+      "description": "도메인을 제외한 현재 페이지의 상대 경로",
+      "note": "예시: /"
+    },
+    "page_title": {
+      "description": "현재 웹 페이지의 타이틀(Title) 정보",
+      "note": "예시: 카누 공식 웹사이트"
+    },
+    "page_referrer": {
+      "description": "현재 페이지로 유입되기 직전의 이전 페이지 URL 주소",
+      "note": "수집되지 않거나 비어있을 수 있습니다."
+    },
+    "page_category": {
+      "description": "현재 페이지가 속한 카테고리 분류 정보",
+      "note": "예시: 메인"
+    },
+    "category": {
+      "description": "클릭되거나 상호작용한 요소가 속한 영역의 카테고리명",
+      "note": "예시: GNB, 메인 배너, 추천 상품 등"
+    },
+    "label": {
+      "description": "클릭된 요소의 텍스트 라벨 또는 상품명 정보",
+      "note": "예시: 로그인, 회원가입, 특정 상품명 등"
+    },
+    "link_url": {
+      "description": "클릭된 요소가 연결되는 이동 대상 URL 경로",
+      "note": "예시: /product-detail/129678328"
+    },
+    "direction": {
+      "description": "배너 이동 등의 조작 방향 정보",
+      "note": "예시: next, prev"
+    }
+  }
+}

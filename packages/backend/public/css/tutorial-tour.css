@@ -1,0 +1,262 @@
+/* In-app product tour on real wizard UI */
+
+body.tour-active {
+  /* keep page scrollable so spotlight targets can scroll into view */
+}
+
+.tour-root {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  pointer-events: none;
+  font-family: "Pretendard", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.tour-blocker {
+  position: absolute;
+  inset: 0;
+  background: transparent;
+  pointer-events: auto;
+}
+
+.tour-spotlight {
+  position: fixed;
+  z-index: 10001;
+  border-radius: 12px;
+  box-shadow:
+    0 0 0 9999px rgba(15, 23, 42, 0.28),
+    0 0 0 3px #3b82f6,
+    0 10px 28px rgba(37, 99, 235, 0.22);
+  pointer-events: none;
+  transition: top 0.18s ease, left 0.18s ease, width 0.18s ease, height 0.18s ease;
+  background: transparent;
+}
+
+.tour-tooltip {
+  position: fixed;
+  z-index: 10002;
+  width: min(380px, calc(100vw - 24px));
+  padding: 18px 18px 14px;
+  border-radius: 14px;
+  background: #fff;
+  color: #0f172a;
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.18);
+  border: 1px solid #e2e8f0;
+  pointer-events: auto;
+}
+
+.tour-sample-settings {
+  margin: 16px 0 8px;
+  padding: 18px 20px;
+  border-radius: 14px;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.12);
+  max-width: 480px;
+}
+
+.tour-sample-settings-kicker {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: #64748b;
+  margin-bottom: 6px;
+}
+
+.tour-sample-settings h3 {
+  margin: 0 0 4px;
+  font-size: 18px;
+}
+
+.tour-sample-settings p {
+  margin: 0 0 14px;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.tour-sample-settings label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #334155;
+}
+
+.tour-sample-settings input,
+.tour-sample-settings textarea {
+  font: inherit;
+  font-weight: 400;
+  padding: 8px 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #f8fafc;
+  color: #0f172a;
+}
+
+.tour-sample-settings-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.tour-sample-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  margin-right: 6px;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.tour-tooltip-kicker {
+  font-size: 12px;
+  font-weight: 800;
+  color: #2563eb;
+  letter-spacing: 0.04em;
+  margin-bottom: 8px;
+}
+
+.tour-tooltip h3 {
+  margin: 0 0 10px;
+  font-size: 18px;
+  letter-spacing: -0.02em;
+  line-height: 1.35;
+}
+
+.tour-tooltip p {
+  margin: 0 0 16px;
+  font-size: 14.5px;
+  line-height: 1.6;
+  color: #334155;
+}
+
+.tour-tooltip-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+.tour-btn {
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  color: #0f172a;
+  border-radius: 9px;
+  padding: 9px 13px;
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.tour-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.tour-btn.ghost {
+  background: transparent;
+  border-color: transparent;
+  color: #64748b;
+}
+
+.tour-btn.primary {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #fff;
+}
+
+.tour-btn.primary:hover {
+  filter: brightness(1.05);
+}
+
+.tour-target-pulse {
+  /* Do NOT set position:relative — it breaks fixed UI like #param-drawer. */
+  outline: 2px solid rgba(59, 130, 246, 0.45);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
+/* In-flow targets still need a stacking bump for the outline to read clearly */
+.tour-target-pulse:not(.param-drawer):not(.param-drawer-backdrop) {
+  position: relative;
+  z-index: 10001;
+}
+
+/* Pick-step sample: { } is normally opacity:0 until hover — force visible in tour */
+body.tour-active #list .param-btn {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+}
+
+/* Real param drawer sits at z-index ~1001; tour root is 10000 — elevate during demo */
+body.tour-active #param-drawer-backdrop.tour-elevated {
+  z-index: 10040 !important;
+  pointer-events: none !important;
+}
+body.tour-active #param-drawer.tour-elevated {
+  z-index: 10050 !important;
+}
+body.tour-active .tour-tooltip.tour-above-drawer {
+  z-index: 10060 !important;
+}
+
+#tour-body .tour-warn {
+  color: #dc2626;
+  font-weight: 800;
+}
+
+/* Tip 14: make sample checkboxes loud — checked = red emphasis */
+body.tour-emphasize-checks #list .tree-select-cb {
+  width: 18px;
+  height: 18px;
+  accent-color: #dc2626;
+  outline: 2px solid #dc2626;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.18);
+}
+
+body.tour-emphasize-checks #list li.tour-check-on {
+  box-shadow: inset 3px 0 0 #dc2626;
+}
+
+body.tour-emphasize-checks #list li.tour-check-on .label-text,
+body.tour-emphasize-checks #list li.tour-check-on .tree-row-title {
+  color: #b91c1c;
+  font-weight: 700;
+}
+
+body.tour-emphasize-checks #list li.tour-check-off {
+  opacity: 0.45;
+}
+
+body.tour-emphasize-checks #selection-summary {
+  color: #dc2626;
+  font-weight: 800;
+}
+
+.wizard-tutorial-link,
+#wizard-tutorial-btn.wizard-tutorial-link {
+  border: none;
+  cursor: pointer;
+  font: inherit;
+}
+
+@media (max-width: 800px) {
+  .tour-tooltip {
+    width: min(100vw - 20px, 380px);
+  }
+  .tour-tooltip h3 {
+    font-size: 17px;
+  }
+  .tour-tooltip p {
+    font-size: 14px;
+  }
+}

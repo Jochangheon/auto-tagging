@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>택소노미 초안 만들기</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
+  <link rel="stylesheet" href="/css/workspace.css?v=20260731a" />
+  <link rel="stylesheet" href="/css/wizard.css?v=20260731f" />
+  <link rel="stylesheet" href="/css/tutorial-tour.css?v=20260724d" />
+</head>
+<body>
+  <div class="wizard-app">
+    <header class="wizard-header">
+      <div>
+        <div class="wizard-header-brand">Analytics <span>SaaS</span></div>
+        <div class="wizard-header-subtitle">택소노미 초안 만들기 <span class="version-badge" id="app-version">v3.5.0</span></div>
+      </div>
+      <div class="wizard-header-meta">
+        <span id="autosave-status">DB 저장 대기</span>
+        <span id="credits-firecrawl" class="credits-badge">Firecrawl: …</span>
+        <span id="credits-llm" class="credits-badge">LLM: …</span>
+        <div class="wizard-auth-box">
+          <span id="auth-user-pill" class="auth-user-pill">로그인 확인 중…</span>
+          <button type="button" id="auth-logout-btn" class="auth-logout-btn">로그아웃</button>
+        </div>
+      </div>
+    </header>
+
+    <div class="wizard-step-bar" id="wizard-step-bar">
+      <nav class="wizard-step-nav" id="wizard-step-nav" aria-label="진행 단계"></nav>
+      <button type="button" class="wizard-tutorial-link" id="wizard-tutorial-btn" data-open-tutorial title="현재 단계 사용방법">
+        사용방법
+      </button>
+    </div>
+
+    <div class="global-analyze-bar" id="global-analyze-bar" hidden>
+      <span class="global-analyze-dot" aria-hidden="true"></span>
+      <span id="global-analyze-text" class="global-analyze-text">분석 진행 중…</span>
+      <button type="button" class="btn-stop" id="global-stop-btn">분석 중단</button>
+    </div>
+
+    <div class="project-context-bar" id="project-context-bar" hidden>
+      <span class="project-context-label">현재 프로젝트</span>
+      <strong id="project-context-name"></strong>
+      <span class="project-context-link">이후 모든 입력·분석·태그가 이 프로젝트에 저장됩니다.</span>
+      <button type="button" class="btn-secondary" id="project-settings-btn">프로젝트 옵션</button>
+    </div>
+
+    <div class="wizard-body">
+      <main class="wizard-main">
+        <!-- 0. 프로젝트 선택 -->
+        <section class="wizard-panel active project-select-panel" id="panel-0" data-step="0">
+          <div class="project-select-head">
+            <div>
+              <h2>프로젝트 선택</h2>
+              <p class="lead">선택한 프로젝트에 속한 분석만 불러옵니다. 다른 프로젝트의 데이터는 섞이지 않습니다.</p>
+            </div>
+            <div class="project-create-row">
+              <button type="button" class="btn-primary" id="project-create-btn">새 프로젝트</button>
+            </div>
+          </div>
+          <div id="project-list-status" class="project-list-status">DB에서 프로젝트를 불러오는 중…</div>
+          <div id="project-list" class="project-list"></div>
+        </section>
+
+        <!-- 1. 사이트 입력 -->
+        <section class="wizard-panel" id="panel-1" data-step="1">
+          <h2>사이트 입력</h2>
+          <p class="lead">도메인만 넣어도 하위 페이지 URL을 불러올 수 있습니다. 분석할 페이지만 선택·확정하세요. 이 단계에서는 분석을 실행하지 않습니다.</p>
+          <div class="wizard-tip">불러온 목록에서 체크한 URL만 「확정」됩니다. PC·MO는 확정 목록에서 켜고, 「다음」으로 2단계에 가면 분석할 수 있습니다.</div>
+
+          <div class="step1-cards">
+          <div class="step1-url-col">
+            <div class="site-discover-card" id="site-discover-card">
+              <div class="url-list-head">
+                <span>페이지 URL 불러오기</span>
+              </div>
+              <div class="site-discover-body">
+                <label class="site-discover-field">
+                  <span>사이트 주소 (도메인만 입력 가능)</span>
+                  <input type="text" id="seed-url-input" class="seed-url-input" placeholder="example.com 또는 https://example.com" autocomplete="url" inputmode="url" spellcheck="false" />
+                </label>
+                <div class="site-discover-actions">
+                  <label class="site-discover-limit">
+                    <span>최대</span>
+                    <select id="discover-limit" aria-label="불러올 URL 최대 개수">
+                      <option value="50" selected>50</option>
+                      <option value="100">100</option>
+                      <option value="200">200</option>
+                      <option value="500">500</option>
+                    </select>
+                  </label>
+                  <label class="site-discover-limit" title="큰 사이트는 「사이트맵만」이 더 빠릅니다">
+                    <span>방식</span>
+                    <select id="discover-sitemap-mode" aria-label="URL 수집 방식">
+                      <option value="only" selected>사이트맵만(빠름)</option>
+                      <option value="include">전체</option>
+                    </select>
+                  </label>
+                  <label
+                    class="site-discover-subdomains"
+                    title="꺼두면 입력한 도메인만(www 포함). 켜면 blog·m 등 다른 서브도메인 페이지도 목록에 넣습니다."
+                  >
+                    <input type="checkbox" id="discover-include-subdomains" />
+                    <span>다른 서브도메인도</span>
+                  </label>
+                  <button type="button" class="btn-primary" id="discover-urls-btn">페이지 불러오기</button>
+                  <button type="button" class="btn-secondary" id="discover-stop-btn" hidden>중단</button>
+                </div>
+                <p class="site-discover-hint caption">
+                  「다른 서브도메인도」: 예) shop.example.com 입력 시, 기본은 그 도메인만. 체크하면 blog.example.com 등도 같이 찾습니다.
+                </p>
+                <p class="site-discover-status caption" id="discover-status" hidden></p>
+              </div>
+            </div>
+
+            <div class="discover-pick-card" id="discover-pick-card" hidden>
+              <div class="url-list-head">
+                <span>찾은 URL 선택 <span class="caption">(시드만 기본 체크 · 찾는 즉시 추가)</span></span>
+                <span class="caption" id="discover-pick-count"></span>
+              </div>
+              <div class="discover-pick-toolbar">
+                <input type="search" id="discover-filter" class="search-input" placeholder="경로 검색…" />
+                <button type="button" class="btn-secondary btn-compact" id="discover-select-all">검색결과 전체</button>
+                <button type="button" class="btn-secondary btn-compact" id="discover-select-none">전체 해제</button>
+              </div>
+              <div class="discover-list" id="discover-list" role="listbox" aria-multiselectable="true"></div>
+              <div class="url-list-foot discover-pick-foot">
+                <button type="button" class="btn-primary" id="apply-discovered-btn">선택 URL 확정</button>
+              </div>
+            </div>
+
+            <div class="url-list-card compact">
+              <div class="url-list-head">
+                <span>분석 대상 URL (확정)</span>
+                <button type="button" class="btn-secondary" id="paste-urls-btn">직접 붙여넣기</button>
+              </div>
+              <div class="url-rows" id="url-rows"></div>
+              <div class="url-list-foot">
+                <button type="button" class="btn-secondary" id="add-url-btn">+ URL 직접 추가</button>
+              </div>
+            </div>
+            <div class="url-summary" id="url-summary"></div>
+          </div>
+          </div>
+        </section>
+
+        <!-- 2. 분석 실행 -->
+        <section class="wizard-panel" id="panel-2" data-step="2">
+          <h2>분석 실행</h2>
+
+          <div class="analyze-layout" id="analyze-layout">
+            <div class="analyze-main">
+              <div class="analyze-page-list">
+                <div class="analyze-page-list-head">
+                  <span class="analyze-page-list-title">분석 페이지 목록</span>
+                  <span id="analyze-batch-status" class="caption"></span>
+                </div>
+                <div class="job-cards" id="job-cards">
+                  <p class="caption analyze-page-empty">1단계에서 등록한 URL이 여기에 표시됩니다.</p>
+                </div>
+              </div>
+
+              <div id="interactive-login-bar" class="interactive-login-bar" hidden>
+                <span id="interactive-login-status" class="interactive-login-status"></span>
+                <button type="button" class="btn-secondary" id="interactive-login-complete" hidden>로그인 완료</button>
+                <button type="button" class="btn-ghost" id="interactive-login-cancel" hidden>창 닫기</button>
+              </div>
+
+              <div class="analyze-guide" id="analyze-guide">
+                <p class="lead" id="analyze-lead"></p>
+                <ul class="analyze-guide-list" id="analyze-guide-list">
+                  <li>미완료 페이지(PC/MO)만 분석하고 완료 항목은 목록 하단에 표시합니다.</li>
+                  <li>완료 항목은 카드의 <strong>다시 분석</strong>을 눌렀을 때만 새로 실행합니다.</li>
+                  <li><strong>태깅 → 이름붙이기 → 이미지 캡쳐</strong> 순으로 진행됩니다.</li>
+                  <li>로그인 필요 시 해당 사이트 로그인 창이 자동으로 열립니다. 로그인한 뒤 창을 닫거나 「로그인 완료」를 누르세요. (/mypage 등)</li>
+                </ul>
+              </div>
+
+              <div class="analyze-toolbar">
+                <button type="button" class="btn-primary" id="start-analyze-btn">분석 시작</button>
+                <button type="button" class="btn-secondary" id="retry-failed-btn" hidden>실패 항목만 다시 시도</button>
+                <button type="button" class="btn-secondary" id="stop-analyze-btn" hidden>중단</button>
+              </div>
+
+              <div id="progress-wrap" class="progress-wrap" aria-hidden="true">
+                <div class="progress-label">
+                  <span id="progress-stage">준비 중</span>
+                  <span id="progress-percent" class="percent">0%</span>
+                </div>
+                <div class="progress-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                  <div id="progress-fill" class="progress-bar-fill"></div>
+                </div>
+                <div id="progress-detail" class="progress-detail"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 3. 태그 선택 -->
+        <section class="wizard-panel" id="panel-3" data-step="3">
+          <div id="phase2-capture-banner" class="phase2-capture-banner" hidden>
+            <span class="phase2-capture-dot" aria-hidden="true"></span>
+            <span id="phase2-capture-text">요소 캡처 진행 중…</span>
+            <div class="phase2-capture-bar" aria-hidden="true">
+              <div id="phase2-capture-fill" class="phase2-capture-fill"></div>
+            </div>
+          </div>
+
+          <!-- Fitts: 확정 CTA를 작업 영역 바로 위(짧은 이동거리)에 고정 -->
+          <div class="pick-confirm-dock" id="pick-confirm-dock" hidden>
+            <div class="pick-confirm-copy">
+              <strong id="selection-summary">선택 0 / 전체 0</strong>
+              <span class="pick-confirm-hint">체크 = 택소노미 포함 · 주황 = 미리보기 포커스</span>
+            </div>
+            <div class="pick-confirm-actions">
+              <button type="button" id="select-all-btn" class="btn-secondary btn-compact">전체 선택</button>
+              <button type="button" id="select-none-btn" class="btn-secondary btn-compact">전체 해제</button>
+              <button type="button" id="pick-confirm-btn" class="btn-primary">확정하고 다음</button>
+            </div>
+          </div>
+
+          <div class="pick-toolbar">
+            <select id="selection-filter" aria-label="필터">
+              <option value="all">전체 보기</option>
+              <option value="selected">포함된 것만</option>
+              <option value="excluded">제외된 것만</option>
+            </select>
+            <input type="search" class="search-input" id="pick-search" placeholder="라벨 검색…" autocomplete="off" />
+            <details class="pick-help">
+              <summary>사용 팁</summary>
+              <p>액션을 펼친 뒤 요소를 클릭하면 오른쪽 캡처에 주황 박스로 위치가 표시됩니다. 체크를 끈 항목은 택소노미에서 제외됩니다.</p>
+            </details>
+          </div>
+
+          <div class="grid pick-grid">
+            <section class="card list-card">
+              <div class="card-head">
+                <h2>후보 트리</h2>
+                <details class="tree-legend-details">
+                  <summary>계층 안내</summary>
+                  <span class="tree-legend" aria-hidden="true">
+                    <span class="legend-item legend-page">페이지</span>
+                    <span class="legend-sep">›</span>
+                    <span class="legend-item legend-category">카테고리</span>
+                    <span class="legend-sep">›</span>
+                    <span class="legend-item legend-action">액션</span>
+                    <span class="legend-sep">›</span>
+                    <span class="legend-item legend-label">클릭 요소</span>
+                  </span>
+                </details>
+                <span id="count" class="caption"></span>
+              </div>
+              <div class="pick-page-tabs" id="pick-page-tabs" hidden role="tablist" aria-label="페이지 선택"></div>
+              <div id="selection-bar" class="selection-bar" hidden></div>
+              <div class="card-body">
+                <ul id="list">
+                  <li class="empty">분석 후 interactive 요소 목록이 표시됩니다.</li>
+                </ul>
+              </div>
+            </section>
+            <section class="card live-card">
+              <div class="card-head">
+                <h2>미리보기</h2>
+                <div class="preview-tools">
+                  <button type="button" id="preview-show-all-btn" class="btn-secondary btn-compact" disabled aria-pressed="false">모든 위치 표시</button>
+                </div>
+              </div>
+              <div id="position-validation-panel" class="position-validation-panel" hidden></div>
+              <div class="card-body" id="preview-body">
+                <div id="preview-empty" class="empty-state preview-empty-state">
+                  <div class="preview-empty-art" aria-hidden="true"></div>
+                  <p>왼쪽에서 요소를 선택하면<br />페이지 캡처와 위치가 여기에 표시됩니다.</p>
+                  <small>체크 해제는 제외, 행 클릭은 위치 확인입니다.</small>
+                </div>
+                <div id="preview-shell" class="preview-shell pc" hidden>
+                  <div id="preview-scroll" class="preview-scroll">
+                    <div id="preview-stage" class="preview-stage">
+                      <img id="preview-image" alt="페이지 캡처" />
+                      <div id="preview-overlay" class="preview-overlay"></div>
+                    </div>
+                  </div>
+                  <div id="preview-message" class="preview-message" hidden></div>
+                </div>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <!-- 4. 택소노미 초안 -->
+        <section class="wizard-panel view-taxonomy-panel" id="panel-4" data-step="4">
+          <div id="view-taxonomy" class="view-taxonomy">
+            <div class="taxonomy-platform-tabs" id="taxonomy-platform-tabs" role="tablist" aria-label="플랫폼 구분">
+              <button type="button" class="taxonomy-platform-tab active" data-taxonomy-scope="common">공통</button>
+              <button type="button" class="taxonomy-platform-tab" data-taxonomy-scope="pc">PC</button>
+              <button type="button" class="taxonomy-platform-tab" data-taxonomy-scope="mo">MO</button>
+            </div>
+            <div class="taxonomy-page-tabs" id="taxonomy-page-tabs"></div>
+            <div class="taxonomy-summary-bar" id="taxonomy-summary-bar" hidden>
+              <div class="taxonomy-summary-chips" id="taxonomy-summary-chips"></div>
+            </div>
+            <div class="taxonomy-toolbar">
+              <input type="search" id="taxonomy-search" placeholder="event_name · label 검색…" />
+            </div>
+            <div id="taxonomy-empty" class="taxonomy-empty">먼저 태그를 선택·확정하세요.</div>
+            <div id="taxonomy-content" class="taxonomy-inner" hidden>
+              <div class="taxonomy-table-wrap" id="taxonomy-table-wrap"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 5. 검토 &보내기 -->
+        <section class="wizard-panel" id="panel-5" data-step="5">
+          <div class="export-panel-inner">
+            <div class="export-done">
+              <div class="export-done-badge" aria-hidden="true">✓</div>
+              <h2>택소노미 초안이 준비되었습니다</h2>
+              <p class="lead">요약을 확인한 뒤 Excel 파일을 내려받으세요.</p>
+            </div>
+            <div class="export-stats" id="export-stats"></div>
+            <div class="export-file-card" id="export-file-card">
+              <div class="export-file-icon" aria-hidden="true">XLSX</div>
+              <div class="export-file-meta">
+                <strong>택소노미 Excel</strong>
+                <p>공통 · PC/MO 페이지 시트와 변수사전이 포함된 .xlsx 파일입니다.</p>
+              </div>
+              <div class="export-file-actions">
+                <button type="button" class="btn-primary" id="taxonomy-export-btn">Excel 다운로드</button>
+              </div>
+            </div>
+            <div class="export-preview-card">
+              <div class="export-card-head">Excel 미리보기</div>
+              <div class="export-card-body" id="export-preview">
+                <div class="export-preview-empty">확정 후 미리보기가 표시됩니다.</div>
+              </div>
+            </div>
+            <div class="export-footer-actions">
+              <button type="button" class="btn-secondary" id="new-wizard-btn">새 분석 시작</button>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div id="wizard-center-progress" class="wizard-center-progress" hidden aria-live="polite" aria-hidden="true">
+      <div class="wizard-center-progress-card">
+        <div class="wizard-center-progress-label">
+          <span id="wizard-center-progress-stage">진행 중…</span>
+          <span id="wizard-center-progress-percent" class="percent">0%</span>
+        </div>
+        <div
+          id="wizard-center-progress-bar"
+          class="wizard-center-progress-bar"
+          role="progressbar"
+          aria-valuemin="0"
+          aria-valuemax="100"
+          aria-valuenow="0"
+        >
+          <div id="wizard-center-progress-fill" class="wizard-center-progress-fill"></div>
+        </div>
+        <div id="wizard-center-progress-detail" class="wizard-center-progress-detail"></div>
+      </div>
+    </div>
+
+    <footer class="wizard-footer">
+      <button type="button" class="btn-secondary" id="wizard-prev">이전</button>
+      <span id="wizard-status" class="caption">
+        <span id="badge" class="badge idle">대기</span>
+        <span id="status-text">URL을 입력하고 다음을 누르세요.</span>
+      </span>
+      <button type="button" class="btn-primary" id="wizard-next">다음</button>
+    </footer>
+  </div>
+
+  <!-- workspace-core 호환 (숨김) -->
+  <div class="wizard-compat-hidden" aria-hidden="true">
+    <input id="url" type="url" value="" />
+    <button id="analyze" type="button"></button>
+    <button id="view-only" type="button"></button>
+    <button id="confirm-btn" type="button"></button>
+    <span id="layout-hint" hidden></span>
+    <button type="button" id="mode-pc" data-mode="pc" class="active">PC</button>
+    <button type="button" id="mode-mo" data-mode="mo">MO</button>
+    <span id="platform-hint"></span>
+    <span id="nav-analyze"></span>
+    <span id="nav-taxonomy"></span>
+    <div id="main-panel"></div>
+  </div>
+
+  <div id="param-drawer-backdrop" class="param-drawer-backdrop" hidden aria-hidden="true"></div>
+  <aside id="param-drawer" class="param-drawer" hidden aria-hidden="true" aria-labelledby="param-drawer-title">
+    <div class="param-drawer-head">
+      <div>
+        <h3 id="param-drawer-title">이벤트 파라미터</h3>
+        <div class="param-drawer-title-row">
+          <span id="param-drawer-badge" class="param-event-badge click"></span>
+          <span id="param-drawer-label" class="param-drawer-label"></span>
+        </div>
+        <div id="param-drawer-sub" class="param-drawer-sub"></div>
+      </div>
+      <button type="button" id="param-drawer-close" class="param-drawer-close" aria-label="닫기">×</button>
+    </div>
+    <div id="param-drawer-body" class="param-drawer-body"></div>
+    <div class="param-drawer-foot" id="param-drawer-foot">
+      <button type="button" id="param-toggle-edit" class="param-toggle-json">수정</button>
+      <button type="button" id="param-toggle-json" class="param-toggle-json">JSON 보기</button>
+      <button type="button" id="param-save-btn" class="param-copy-btn" hidden>저장</button>
+      <button type="button" id="param-copy-btn" class="param-copy-btn">복사</button>
+    </div>
+  </aside>
+
+  <dialog id="paste-dialog">
+    <form method="dialog" style="padding:16px;min-width:360px">
+      <h3 style="margin:0 0 8px">URL 여러 줄 붙여넣기</h3>
+      <p style="margin:0 0 8px;font-size:13px;color:var(--text-secondary)">한 줄에 URL 하나씩 입력하세요.</p>
+      <textarea id="paste-textarea" rows="8" style="width:100%;font:inherit;padding:8px"></textarea>
+      <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end">
+        <button type="button" class="btn-secondary" id="paste-cancel">취소</button>
+        <button type="submit" class="btn-primary">추가</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="project-settings-dialog" class="project-settings-dialog">
+    <form method="dialog" id="project-settings-form">
+      <div class="project-settings-head">
+        <div>
+          <span class="project-settings-kicker">PROJECT SETTINGS</span>
+          <h2>프로젝트 옵션 설정</h2>
+          <p>프로젝트 이름과 설명을 관리합니다.</p>
+        </div>
+        <button type="button" class="project-settings-close" id="project-settings-close" aria-label="닫기">×</button>
+      </div>
+      <label class="project-settings-field">
+        <span>프로젝트 이름</span>
+        <input type="text" id="project-settings-name" maxlength="120" required />
+      </label>
+      <label class="project-settings-field">
+        <span>설명</span>
+        <textarea id="project-settings-description" rows="3" maxlength="1000" placeholder="이 프로젝트의 분석 목적"></textarea>
+      </label>
+      <div class="project-settings-proof">
+        <strong>DB 연결</strong>
+        기존 분석 결과는 항상 DB에서 불러옵니다. URL · 후보 · 카/액/라 · 택소노미도 이 프로젝트에 저장됩니다.
+      </div>
+      <div class="project-settings-actions">
+        <span id="project-settings-message"></span>
+        <button type="button" class="btn-secondary" id="project-settings-cancel">취소</button>
+        <button type="submit" class="btn-primary" id="project-settings-save">저장하고 프로젝트 열기</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script>window.__WIZARD_MODE__ = true;</script>
+  <script src="/js/workspace-core.js?v=20260731e"></script>
+  <script src="/js/wizard-app.js?v=20260731f"></script>
+  <script src="/js/tutorial-tour.js?v=20260731f"></script>
+</body>
+</html>

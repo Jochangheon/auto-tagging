@@ -1,0 +1,32 @@
+{
+  "name": "@autotag/backend",
+  "version": "3.5.0",
+  "private": true,
+  "description": "Backend: session CRUD, events upsert, unified-v1 spec assembly, LLM naming.",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --import ./src/polyfill.mjs src/server.ts",
+    "build": "tsc -p tsconfig.json && node ./scripts/copy-crawl-assets.mjs",
+    "start": "node --import ./src/polyfill.mjs dist/server.js",
+    "db:migrate": "tsx --import ./src/polyfill.mjs src/db/run-migrate-cli.ts"
+  },
+  "dependencies": {
+    "@autotag/shared": "*",
+    "@browserbasehq/stagehand": "^2.4.0",
+    "@electric-sql/pglite": "^0.5.4",
+    "cheerio": "^1.0.0",
+    "exceljs": "^4.4.0",
+    "express": "^4.19.0",
+    "pg": "^8.22.0",
+    "playwright": "^1.52.0",
+    "sharp": "^0.33.5",
+    "xlsx": "^0.18.5",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/pg": "^8.20.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.4.0"
+  }
+}

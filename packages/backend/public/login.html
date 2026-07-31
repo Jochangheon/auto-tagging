@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>로그인 · 자동태깅</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
+  <link rel="stylesheet" href="/css/login.css?v=20260722f" />
+</head>
+<body>
+  <main class="login-page">
+    <section class="login-card">
+      <div class="login-brand">Analytics <span>SaaS</span></div>
+      <h1>자동태깅 로그인</h1>
+      <p class="login-lead">Microsoft 계정으로 들어가면, 내 분석 결과만 따로 저장됩니다.</p>
+
+      <a class="ms-login-btn" id="ms-login-btn" href="/api/auth/microsoft">
+        <span class="ms-logo" aria-hidden="true">
+          <span></span><span></span><span></span><span></span>
+        </span>
+        Microsoft 계정으로 로그인
+      </a>
+
+      <p class="login-error" id="login-error" hidden></p>
+
+      <details class="setup-panel" id="setup-panel" hidden>
+        <summary>관리자용 · Microsoft 앱 연결 (서버에 없을 때만)</summary>
+        <p class="setup-admin-note">일반 사용자는 이 단계가 필요 없습니다. 서버 <code>packages/backend/.env</code>에 <code>AZURE_AD_CLIENT_ID</code>를 넣으면 로그인 버튼만 보입니다.</p>
+        <ol class="setup-steps">
+          <li><a href="https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade" target="_blank" rel="noreferrer">Azure 포털</a> → 새 등록 → 이름 아무거나 → 지원 계정: <strong>개인 Microsoft 계정 포함</strong></li>
+          <li>인증 → 플랫폼 추가 → <strong>단일 페이지 애플리케이션(SPA)</strong> → 리디렉션 URI에 아래 주소 그대로</li>
+          <li>개요의 <strong>애플리케이션(클라이언트) ID</strong>만 아래에 붙여넣고 저장 → 위 Microsoft 버튼으로 로그인</li>
+        </ol>
+        <label class="setup-field">
+          <span>리디렉션 URI (복사해서 Azure에 넣기)</span>
+          <input id="redirect-uri" type="text" readonly />
+        </label>
+        <label class="setup-field">
+          <span>애플리케이션(클라이언트) ID</span>
+          <input id="client-id" type="text" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" autocomplete="off" />
+        </label>
+        <label class="setup-field">
+          <span>클라이언트 암호 (웹 앱이면 필요 · SPA/공개면 비워도 됨)</span>
+          <input id="client-secret" type="password" placeholder="없으면 비움" autocomplete="off" />
+        </label>
+        <button type="button" class="setup-save" id="setup-save">연결 저장</button>
+        <p class="setup-msg" id="setup-msg"></p>
+      </details>
+    </section>
+  </main>
+  <script src="/js/login.js?v=20260722f"></script>
+</body>
+</html>

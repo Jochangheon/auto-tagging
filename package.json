@@ -1,0 +1,19 @@
+﻿{
+  "name": "agent-saas",
+  "version": "3.5.0",
+  "private": true,
+  "description": "Firecrawl-based agent SaaS — URL analysis, pick, unified-v1 spec (no extension in this repo).",
+  "workspaces": [
+    "packages/shared",
+    "packages/backend"
+  ],
+  "scripts": {
+    "build:shared": "npm run build -w @autotag/shared",
+    "build:backend": "npm run build -w @autotag/backend",
+    "build": "npm run build:shared && npm run build:backend",
+    "dev:backend": "npm run dev -w @autotag/backend"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

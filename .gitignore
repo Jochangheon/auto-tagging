@@ -1,0 +1,31 @@
+# secrets / local env
+.env
+.env.*
+!.env.example
+spikes/.env
+packages/backend/.env
+packages/backend/.firecrawl-open-sessions.json
+FIRECRAWL_KEYS.md
+packages/backend/data/azure-oauth.json
+
+# dependencies & build
+node_modules/
+packages/*/dist/
+*.tsbuildinfo
+
+# runtime data
+packages/backend/data/captures/
+packages/backend/data/pglite/
+packages/backend/data/snapshots/
+packages/backend/data/*.db
+packages/backend/data/*.sqlite*
+
+# IDE / agent local
+.cursor/
+.vscode/
+*.log
+.DS_Store
+Thumbs.db
+
+# temp / local notes that may contain secrets
+happypoint-dev-paths.txt
