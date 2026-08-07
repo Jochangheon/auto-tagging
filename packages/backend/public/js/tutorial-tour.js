@@ -277,7 +277,7 @@
       target: "#param-edit-form, #param-drawer-foot, #param-drawer.tour-elevated",
       union: true,
       title: "13. 카테고리·액션·라벨 수정",
-      body: "서랍 아래 「수정」을 누르면 입력폼이 펼쳐집니다(샘플). 카테고리·액션·라벨·이벤트명을 고친 뒤 「저장」합니다.",
+      body: "표 칸에서 바로 수정합니다. 여러 행을 체크한 뒤 위쪽 일괄 입력으로 한 번에 바꾸고 「변경 저장」하세요.",
       prepare: "pick-param-edit",
     },
     {

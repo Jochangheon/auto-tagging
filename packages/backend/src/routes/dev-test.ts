@@ -1618,6 +1618,145 @@ devTestRouter.patch("/taxonomy/rows", async (req, res) => {
   }
 });
 
+/**
+ * PATCH /api/dev/taxonomy/rows/batch — edit many taxonomy rows, rebuild once.
+ * Body: { session_id, rows: [{ row_key, page_category?, action?, label?, event_name?, trigger?, description?, note? }] }
+ */
+devTestRouter.patch("/taxonomy/rows/batch", async (req, res) => {
+  const sessionId =
+    typeof req.body?.session_id === "string" ? req.body.session_id.trim() : "";
+  const patches = Array.isArray(req.body?.rows) ? req.body.rows : [];
+  if (!sessionId) {
+    return res.status(400).json({ ok: false, error: "session_id required" });
+  }
+  if (!patches.length) {
+    return res.status(400).json({ ok: false, error: "rows required" });
+  }
+  const session = getOwnedSession(req, sessionId);
+  if (!session?.taxonomy) {
+    return res.status(404).json({ ok: false, error: "taxonomy_not_confirmed" });
+  }
+
+  const textPatch = (obj: Record<string, unknown>, name: string): string | undefined =>
+    typeof obj?.[name] === "string" ? String(obj[name]).trim() : undefined;
+
+  try {
+    const docByCandidateId = new Map<
+      string,
+      { trigger?: string; description?: string; note?: string }
+    >();
+    const affectedCandidateIds = new Set<string>();
+
+    for (const raw of patches) {
+      if (!raw || typeof raw !== "object") continue;
+      const patch = raw as Record<string, unknown>;
+      const rowKey = typeof patch.row_key === "string" ? patch.row_key.trim() : "";
+      if (!rowKey) continue;
+      const sourceRow = session.taxonomy.tabs
+        .filter((tab) => tab.kind === "page_category")
+        .flatMap((tab) => tab.event_rows)
+        .find((row) => row.row_key === rowKey);
+      if (!sourceRow) continue;
+
+      const candidatePatch = {
+        page_category: textPatch(patch, "page_category"),
+        action: textPatch(patch, "action"),
+        label: textPatch(patch, "label"),
+        merge_label: textPatch(patch, "label"),
+        event_name: textPatch(patch, "event_name"),
+      };
+      const hasCandidatePatch = Object.values(candidatePatch).some((value) => value !== undefined);
+      const trigger = textPatch(patch, "trigger");
+      const description = textPatch(patch, "description");
+      const note = textPatch(patch, "note");
+
+      for (const member of sourceRow.members) {
+        affectedCandidateIds.add(member.candidate_id);
+        if (trigger !== undefined || description !== undefined || note !== undefined) {
+          docByCandidateId.set(member.candidate_id, {
+            trigger: trigger ?? sourceRow.trigger,
+            description: description ?? sourceRow.description,
+            note: note ?? sourceRow.note,
+          });
+        }
+      }
+
+      if (!hasCandidatePatch) continue;
+      for (const page of [...session.pages]) {
+        const tagIds = (page.candidates ?? [])
+          .filter((candidate) =>
+            sourceRow.members.some((member) => member.candidate_id === candidate.candidate_id)
+          )
+          .map((candidate) => candidate.tag_id);
+        if (!tagIds.length) continue;
+        const updatedPage = editPageCandidates(page, tagIds, candidatePatch);
+        replaceSessionPage(sessionId, updatedPage);
+        if (updatedPage.job_id) {
+          updateJob(updatedPage.job_id, {
+            candidates: updatedPage.candidates,
+            groups: updatedPage.groups,
+            candidate_tree: updatedPage.tree,
+          });
+        }
+        if (session.owner_user_id && session.project_id) {
+          await persistPageForUser(
+            session.owner_user_id,
+            session.project_id,
+            updatedPage,
+            getAnalysisSession(sessionId)?.selection ?? null
+          );
+        }
+      }
+    }
+
+    if (!affectedCandidateIds.size) {
+      return res.status(404).json({ ok: false, error: "taxonomy_rows_not_found" });
+    }
+
+    const descriptions = descriptionsFromTaxonomy(session.taxonomy);
+    const taxonomy = buildTaxonomyViewModel({
+      session_id: sessionId,
+      pages: session.pages,
+      selection: session.selection ?? {},
+      descriptions,
+    });
+    for (const tab of taxonomy.tabs) {
+      if (tab.kind !== "page_category") continue;
+      for (const row of tab.event_rows) {
+        const docs = row.members
+          .map((member) => docByCandidateId.get(member.candidate_id))
+          .filter(Boolean);
+        if (!docs.length) continue;
+        const doc = docs[0]!;
+        if (doc.trigger !== undefined) row.trigger = doc.trigger;
+        if (doc.description !== undefined) row.description = doc.description;
+        if (doc.note !== undefined) row.note = doc.note;
+      }
+    }
+
+    setSessionTaxonomy(sessionId, taxonomy);
+    saveTaxonomySnapshot(taxonomyToSnapshotPayload(taxonomy));
+    if (session.owner_user_id && session.project_id) {
+      await saveProjectTaxonomy({
+        userId: session.owner_user_id,
+        projectId: session.project_id,
+        taxonomy,
+      });
+    }
+    return res.status(200).json({
+      ok: true,
+      session_id: sessionId,
+      taxonomy,
+      updated_count: patches.length,
+      ...sessionPayload(sessionId),
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("[dev-test] taxonomy batch edit failed:", message);
+    return res.status(400).json({ ok: false, error: message });
+  }
+});
+
 /** GET /api/dev/taxonomy — latest taxonomy for session */
 devTestRouter.get("/taxonomy", (req, res) => {
   const sessionId = typeof req.query.session_id === "string" ? req.query.session_id.trim() : "";
