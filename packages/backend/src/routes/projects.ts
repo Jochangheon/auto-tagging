@@ -120,6 +120,7 @@ projectsRouter.get("/:id", async (req, res) => {
       requests
     );
     if (project.taxonomy) {
+      // Do not regenerate action crops here — sharp over every row blocked project open.
       setSessionTaxonomy(session.session_id, project.taxonomy);
     }
     const hitKeys = new Set(
@@ -149,6 +150,7 @@ projectsRouter.get("/:id", async (req, res) => {
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    console.error("[projects] open failed:", message);
     return res.status(message === "authentication_required" ? 401 : 500).json({
       ok: false,
       error: message,

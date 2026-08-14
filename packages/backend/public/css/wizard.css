@@ -689,6 +689,40 @@
   margin-bottom: 16px;
 }
 
+.combined-analyze-section {
+  margin-top: 16px;
+}
+
+.combined-section-head,
+.taxonomy-result-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 16px;
+}
+
+.combined-section-head h2,
+.taxonomy-result-head h2 {
+  margin: 2px 0 0;
+}
+
+.combined-section-head p,
+.taxonomy-result-head p {
+  max-width: 560px;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.combined-section-kicker {
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+}
+
 .wizard-footer {
   flex-shrink: 0;
   display: flex;
@@ -907,9 +941,6 @@
 
 .discover-item-text {
   min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
 }
 
 .discover-item-url {
@@ -919,7 +950,8 @@
 
 .discover-item-title {
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: 12px;
+  font-weight: 500;
 }
 
 .discover-pick-foot {
@@ -979,6 +1011,135 @@
 
 .url-row input.url-field { flex: 2; min-width: 200px; }
 .url-row input.alias-field { flex: 1; min-width: 80px; max-width: 120px; }
+
+/* 분석 대상 URL 행 = 진행 상태 행 (대상/실행 목록 통합) */
+.url-list-head-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.url-list-foot-split {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.url-list-foot-split .analyze-toolbar {
+  margin: 0;
+}
+
+.url-row {
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+}
+
+.url-row.job-running {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+}
+
+.url-row.job-failed {
+  border-color: #fecaca;
+  background: #fef2f2;
+}
+
+.url-row.job-done {
+  background: var(--bg-subtle);
+}
+
+.url-row-actions {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.url-row-actions:empty {
+  display: none;
+}
+
+.url-row-status {
+  flex-basis: 100%;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.url-row-hint {
+  color: var(--text-tertiary);
+}
+
+.url-vp-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--bg-muted);
+}
+
+.url-vp-chip.done { background: #ecfdf5; color: #047857; }
+.url-vp-chip.running { background: #eff6ff; color: #1d4ed8; }
+.url-vp-chip.capturing { background: #fffbeb; color: #b45309; }
+.url-vp-chip.failed,
+.url-vp-chip.login_required { background: #fef2f2; color: #b91c1c; }
+
+.url-row-progress {
+  flex: 1;
+  min-width: 80px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--bg-muted);
+  overflow: hidden;
+}
+
+.url-row-progress-fill {
+  display: block;
+  height: 100%;
+  background: var(--status-progress);
+  transition: width 0.3s ease;
+}
+
+.url-row-progress-fill.phase2 {
+  background: #f59e0b;
+}
+
+.viewport-toggle .vp-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  margin-right: 4px;
+  background: transparent;
+}
+
+.viewport-toggle button[data-job-status="done"] .vp-dot { background: var(--status-done); }
+.viewport-toggle button[data-job-status="running"] .vp-dot { background: var(--status-progress); }
+.viewport-toggle button[data-job-status="capturing"] .vp-dot { background: #f59e0b; }
+.viewport-toggle button[data-job-status="queued"] .vp-dot { background: var(--text-tertiary); }
+.viewport-toggle button[data-job-status="failed"] .vp-dot,
+.viewport-toggle button[data-job-status="login_required"] .vp-dot { background: var(--status-risk); }
+
+.analyze-lead-inline {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+details.analyze-guide > summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+details.analyze-guide[open] > summary {
+  margin-bottom: 8px;
+}
 
 .url-row.invalid input.url-field {
   border-color: var(--status-risk);
@@ -1233,7 +1394,7 @@
 /* Step 1: URL / 로그인 가로 배치 */
 .step1-cards {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
   align-items: start;
   margin-top: 12px;
@@ -1759,7 +1920,7 @@
   margin-top: 6px;
 }
 
-/* Step 4 — taxonomy in wizard */
+/* Step 3 — taxonomy result and editing */
 .wizard-panel.view-taxonomy-panel {
   padding: 16px 20px;
 }
@@ -1769,6 +1930,38 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
+}
+
+.taxonomy-result-head {
+  align-items: center;
+  padding: 8px 4px 14px;
+  margin-bottom: 0;
+}
+
+.taxonomy-result-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.taxonomy-result-actions .btn-primary {
+  min-width: 148px;
+  background: var(--accent);
+  color: #fff;
+}
+
+.export-stats.taxonomy-result-stats {
+  grid-template-columns: repeat(3, minmax(100px, 160px));
+  margin: 0 4px 14px;
+}
+
+.taxonomy-result-stats .export-stat {
+  padding: 10px 12px;
+}
+
+.taxonomy-result-stats .export-stat .val {
+  font-size: 20px;
 }
 
 /* Step 5 — export (다운로드 중심) */

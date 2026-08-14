@@ -14,7 +14,7 @@ import {
   type OrchestratorSession,
 } from "../crawl/job-orchestrator.js";
 import { captureAbsPath } from "../crawl/page-capture.js";
-import { elementCaptureAbsPath } from "../crawl/element-capture.js";
+import { actionCaptureAbsPath, elementCaptureAbsPath } from "../crawl/element-capture.js";
 import { readPositionsFile } from "../crawl/positions-file.js";
 import { getJob, updateJob, updateJobProgress, resolveAnalysisSession, upsertSessionPage, getSessionResult, getAnalysisSession, updateSessionSelection, setSessionTaxonomy, setSessionOwnerUserId } from "../crawl/job-store.js";
 import { editPageCandidates, replaceSessionPage } from "../crawl/candidate-edit.js";
@@ -38,6 +38,10 @@ import { parseViewportMode, normalizePageUrl } from "@autotag/shared";
 import type { FirecrawlSession } from "../crawl/firecrawl-interact.js";
 import { describeTaxonomyForCandidates } from "../llm/taxonomy-describe.js";
 import { buildTaxonomyViewModel, taxonomyToSnapshotPayload } from "../taxonomy/taxonomy-builder.js";
+import {
+  attachActionImagesToTaxonomy,
+  copyActionImages,
+} from "../taxonomy/taxonomy-action-images.js";
 import { saveTaxonomySnapshot } from "../taxonomy/taxonomy-snapshot.js";
 import { taxonomyToXlsxBuffer } from "../taxonomy/taxonomy-excel.js";
 import { selectionKey } from "@autotag/shared";
@@ -1230,6 +1234,24 @@ devTestRouter.get("/captures/:jobId/tags/:tagId.png", async (req, res) => {
   }
 });
 
+/** GET /api/dev/captures/:jobId/actions/:fileName.png — action-group crop (per-element boxes) */
+devTestRouter.get("/captures/:jobId/actions/:fileName.png", async (req, res) => {
+  const jobId = req.params.jobId?.trim();
+  const fileName = String(req.params.fileName ?? "").replace(/\.png$/i, "").trim();
+  if (!jobId || !fileName) {
+    return res.status(400).json({ ok: false, error: "invalid_action_capture_path" });
+  }
+  try {
+    const buffer = await readFile(actionCaptureAbsPath(jobId, fileName));
+    res.setHeader("Content-Type", "image/png");
+    res.setHeader("Cache-Control", "public, max-age=86400");
+    return res.send(buffer);
+  } catch {
+    res.setHeader("Cache-Control", "no-store");
+    return res.status(404).type("text/plain").send("action_capture_missing");
+  }
+});
+
 /** GET /api/dev/captures/:jobId/positions.json — element bbox positions saved at tagging */
 devTestRouter.get("/captures/:jobId/positions.json", async (req, res) => {
   const jobId = req.params.jobId?.trim();
@@ -1452,18 +1474,31 @@ devTestRouter.post("/confirm", async (req, res) => {
   const llm_model = typeof req.body?.llm_model === "string" ? req.body.llm_model : undefined;
 
   try {
-    const describeResult = await describeTaxonomyForCandidates({
-      pages: session.pages,
-      selection,
-      llm_model,
-    });
+    const emptyRegistry = { events: {}, properties: {} };
+    const [describeResult, imagedSkeleton] = await Promise.all([
+      describeTaxonomyForCandidates({
+        pages: session.pages,
+        selection,
+        llm_model,
+      }),
+      attachActionImagesToTaxonomy(
+        buildTaxonomyViewModel({
+          session_id: sessionId,
+          pages: session.pages,
+          selection,
+          descriptions: emptyRegistry,
+        }),
+        session.pages
+      ),
+    ]);
 
-    const taxonomy = buildTaxonomyViewModel({
+    let taxonomy = buildTaxonomyViewModel({
       session_id: sessionId,
       pages: session.pages,
       selection,
       descriptions: describeResult.registry,
     });
+    taxonomy = copyActionImages(imagedSkeleton, taxonomy);
 
     const snapshotPayload = taxonomyToSnapshotPayload(taxonomy);
     saveTaxonomySnapshot(snapshotPayload);
@@ -1783,8 +1818,11 @@ devTestRouter.get("/taxonomy/export", async (req, res) => {
   if (!session?.taxonomy) {
     return res.status(404).json({ ok: false, error: "taxonomy_not_confirmed" });
   }
-  const buf = await taxonomyToXlsxBuffer(session.taxonomy);
-  const filename = `taxonomy-${session.taxonomy.site_key}-${Date.now()}.xlsx`;
+  // Ensure action crops exist even if confirm skipped image generation.
+  const taxonomy = await attachActionImagesToTaxonomy(session.taxonomy, session.pages);
+  setSessionTaxonomy(sessionId, taxonomy);
+  const buf = await taxonomyToXlsxBuffer(taxonomy);
+  const filename = `taxonomy-${taxonomy.site_key}-${Date.now()}.xlsx`;
   res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
   res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
   return res.send(buf);

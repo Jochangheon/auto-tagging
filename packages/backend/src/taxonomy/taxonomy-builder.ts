@@ -17,6 +17,7 @@ import {
   TAXONOMY_COMMON_VARIABLES,
   TAXONOMY_TAB_COMMON,
   TAXONOMY_TAB_OTHER,
+  TAXONOMY_LABEL_BUTTON_VAR,
   buildUniqueEventRowKey,
   candidateVisibleInTaggingViewport,
   formatTaxonomyCell,
@@ -56,6 +57,7 @@ interface EnrichedLabelRow {
   capture_url: string | null;
   capture_width: number | null;
   capture_height: number | null;
+  job_id: string | null;
 }
 
 function siteKeyFromPages(pages: PageNode[]): string {
@@ -111,57 +113,52 @@ function normalizeTaxonomyDisplay(value: string): string {
   return value.trim().toUpperCase() === "FNB" ? "Footer" : value.trim();
 }
 
-/** 카/액/라 identity — same triple on every analyzed page → 공통. */
-function taxonomyCalKey(row: EnrichedLabelRow): string {
-  return [
-    normalizeTaxonomyDisplay(row.category_display || row.category),
-    normalizeTaxonomyDisplay(row.action_display || row.action),
-    row.label.trim(),
-  ]
-    .map((value) => value.toLowerCase())
-    .join("\0");
-}
-
-function screenIdOf(row: EnrichedLabelRow): string {
-  return `${row.page_url}::${row.viewport}`;
+/** Action identity — same action on every page of a viewport → 공통_PC / 공통_MO. */
+function taxonomyActionKey(row: EnrichedLabelRow): string {
+  return normalizeTaxonomyDisplay(row.action_display || row.action).toLowerCase();
 }
 
 /**
- * Keys whose 카/액/라 appear on every analyzed screen (page×viewport).
- * No name allowlist (GNB/Footer/푸터) — LLM labels just need to match across screens.
+ * Per-viewport actions that appear on every analyzed page of that viewport.
  */
-function findCrossScreenCommonKeys(rows: EnrichedLabelRow[]): Set<string> {
-  const screens = new Set<string>();
-  for (const row of rows) {
-    if (row.event_name === "페이지뷰") continue;
-    screens.add(screenIdOf(row));
-  }
-  if (screens.size < 2) return new Set();
-
-  const keyScreens = new Map<string, Set<string>>();
-  for (const row of rows) {
-    if (row.event_name === "페이지뷰") continue;
-    const key = taxonomyCalKey(row);
-    let set = keyScreens.get(key);
-    if (!set) {
-      set = new Set();
-      keyScreens.set(key, set);
+function findCrossPageCommonActionsByViewport(
+  rows: EnrichedLabelRow[]
+): Map<ViewportMode, Set<string>> {
+  const result = new Map<ViewportMode, Set<string>>();
+  for (const viewport of ["pc", "mo"] as const) {
+    const vpRows = rows.filter(
+      (row) => row.viewport === viewport && row.event_name !== "페이지뷰"
+    );
+    const pages = new Set(vpRows.map((row) => row.page_url));
+    if (pages.size < 2) {
+      result.set(viewport, new Set());
+      continue;
     }
-    set.add(screenIdOf(row));
-  }
-
-  const common = new Set<string>();
-  for (const [key, present] of keyScreens) {
-    let all = true;
-    for (const screen of screens) {
-      if (!present.has(screen)) {
-        all = false;
-        break;
+    const keyPages = new Map<string, Set<string>>();
+    for (const row of vpRows) {
+      const key = taxonomyActionKey(row);
+      if (!key) continue;
+      let set = keyPages.get(key);
+      if (!set) {
+        set = new Set();
+        keyPages.set(key, set);
       }
+      set.add(row.page_url);
     }
-    if (all) common.add(key);
+    const common = new Set<string>();
+    for (const [key, present] of keyPages) {
+      let all = true;
+      for (const page of pages) {
+        if (!present.has(page)) {
+          all = false;
+          break;
+        }
+      }
+      if (all) common.add(key);
+    }
+    result.set(viewport, common);
   }
-  return common;
+  return result;
 }
 
 /** Merge same 카/액/라 rows from every screen into one taxonomy row. */
@@ -173,15 +170,17 @@ function mergeCommonLabelRows(rows: EnrichedLabelRow[]): EnrichedLabelRow {
   const area = normalizeTaxonomyDisplay(primary.category_display || primary.action_display);
   return {
     ...primary,
-    // Common tab: show area as page_category (not a single page's alias).
-    page_category: area,
-    category: area,
-    category_display: area,
+    // Common tab: category is always 공통; action stays the shared area name.
+    page_category: normalizeTaxonomyDisplay(primary.page_category || area),
+    category: "공통",
+    category_display: "공통",
     action: normalizeTaxonomyDisplay(primary.action_display),
     action_display: normalizeTaxonomyDisplay(primary.action_display),
+    label: TAXONOMY_LABEL_BUTTON_VAR,
     members,
     sort_y: Math.min(...sorted.map((row) => row.sort_y)),
     sort_x: Math.min(...sorted.map((row) => row.sort_x)),
+    job_id: primary.job_id,
   };
 }
 
@@ -221,8 +220,16 @@ function collectLabelRowsFromTree(
 
     const tree = treeForPage(page);
     for (const cat of tree.categories) {
-      const pageCategoryDisplay = cat.display_category || cat.category;
+      const pageCategoryFromTree = normalizeTaxonomyDisplay(
+        cat.display_category || cat.category || ""
+      );
       for (const act of cat.actions) {
+        // Merge every label_group under this action into one taxonomy row.
+        const actionMembers: RecommendedTagCandidate[] = [];
+        let sortY = Number.POSITIVE_INFINITY;
+        let sortX = Number.POSITIVE_INFINITY;
+        let pageViewPrimary: RecommendedTagCandidate | null = null;
+
         for (const lg of act.label_groups) {
           if (!labelGroupVisibleInTaggingViewport(lg, viewport, platformOf)) continue;
 
@@ -236,42 +243,81 @@ function collectLabelRowsFromTree(
             .filter((c) => candidateVisibleInTaggingViewport(c, viewport));
           if (!visibleCandidates.length) continue;
 
-          visibleCandidates.sort((a, b) => a.tag_id - b.tag_id);
-          const primary = visibleCandidates[0]!;
-          const page_category = normalizeTaxonomyDisplay(taggingPageCategoryOf(primary));
-          const isPageView =
-            primary.tag_id === 0 ||
-            primary.action_key === "page_view" ||
-            primary.event_name === "페이지뷰";
-          // Pageview: no 카/액/라 — page identity lives in page_name param.
-          const areaDisplay = isPageView
-            ? ""
-            : normalizeTaxonomyDisplay(taggingAreaOf(primary));
-          const labelDisplay = isPageView
-            ? ""
-            : lg.display_label || lg.label || primary.label;
-          const event_name =
-            primary.event_name?.trim() || (isPageView ? "페이지뷰" : "클릭");
+          for (const c of visibleCandidates) {
+            const isPageView =
+              c.tag_id === 0 || c.action_key === "page_view" || c.event_name === "페이지뷰";
+            if (isPageView) {
+              pageViewPrimary = pageViewPrimary ?? c;
+              continue;
+            }
+            actionMembers.push(c);
+          }
+          sortY = Math.min(sortY, lg.sort_y);
+          sortX = Math.min(sortX, lg.sort_x);
+        }
 
+        if (pageViewPrimary) {
+          const page_category = normalizeTaxonomyDisplay(
+            taggingPageCategoryOf(pageViewPrimary) || pageCategoryFromTree || fallback || ""
+          );
+          const pageName =
+            normalizeTaxonomyDisplay(page.page_name) || page_category || "페이지";
+          const pageLabel = `페이지명 : ${pageName}`;
           out.push({
             page_url: page.page_url,
             page_category,
-            event_name,
-            category: areaDisplay,
-            category_display: areaDisplay,
-            action: areaDisplay,
-            action_display: areaDisplay,
-            label: labelDisplay,
-            direction: paramDirection(primary),
-            sort_y: lg.sort_y,
-            sort_x: lg.sort_x,
-            members: visibleCandidates,
+            event_name: "페이지뷰",
+            category: pageLabel,
+            category_display: pageLabel,
+            action: "",
+            action_display: "",
+            label: "",
+            direction: null,
+            sort_y: -1,
+            sort_x: -1,
+            members: [pageViewPrimary],
             viewport,
             capture_url: page.capture_url ?? null,
             capture_width: page.capture_width ?? null,
             capture_height: page.capture_height ?? null,
+            job_id: page.job_id ?? null,
           });
         }
+
+        if (!actionMembers.length) continue;
+
+        // Dedupe by tag_id (label groups may overlap after merge).
+        const byId = new Map<number, RecommendedTagCandidate>();
+        for (const c of actionMembers) byId.set(c.tag_id, c);
+        const members = [...byId.values()].sort((a, b) => a.tag_id - b.tag_id);
+        const primary = members[0]!;
+        const page_category = normalizeTaxonomyDisplay(
+          taggingPageCategoryOf(primary) || pageCategoryFromTree || fallback || ""
+        );
+        const areaDisplay = normalizeTaxonomyDisplay(
+          act.display_action || act.action || taggingAreaOf(primary)
+        );
+        const categoryDisplay = page_category || pageCategoryFromTree;
+
+        out.push({
+          page_url: page.page_url,
+          page_category,
+          event_name: primary.event_name?.trim() || "클릭",
+          category: categoryDisplay,
+          category_display: categoryDisplay,
+          action: areaDisplay,
+          action_display: areaDisplay,
+          label: TAXONOMY_LABEL_BUTTON_VAR,
+          direction: paramDirection(primary),
+          sort_y: Number.isFinite(sortY) ? sortY : 0,
+          sort_x: Number.isFinite(sortX) ? sortX : 0,
+          members,
+          viewport,
+          capture_url: page.capture_url ?? null,
+          capture_width: page.capture_width ?? null,
+          capture_height: page.capture_height ?? null,
+          job_id: page.job_id ?? null,
+        });
       }
     }
   }
@@ -295,12 +341,18 @@ export function partitionTaxonomyLabelRows(labelRows: EnrichedLabelRow[]): {
   commonRows: EnrichedLabelRow[];
   pageRows: EnrichedLabelRow[];
 } {
-  const commonKeys = findCrossScreenCommonKeys(labelRows);
+  const commonByViewport = findCrossPageCommonActionsByViewport(labelRows);
   const commonGroups = new Map<string, EnrichedLabelRow[]>();
   const pageRows: EnrichedLabelRow[] = [];
   for (const row of labelRows) {
-    if (row.event_name !== "페이지뷰" && commonKeys.has(taxonomyCalKey(row))) {
-      const key = taxonomyCalKey(row);
+    const actionKey = taxonomyActionKey(row);
+    const commonActions = commonByViewport.get(row.viewport);
+    if (
+      row.event_name !== "페이지뷰" &&
+      actionKey &&
+      commonActions?.has(actionKey)
+    ) {
+      const key = `${row.viewport}\0${actionKey}`;
       const group = commonGroups.get(key) ?? [];
       group.push(row);
       commonGroups.set(key, group);
@@ -471,6 +523,7 @@ function labelRowToUniqueRow(
     direction: row.direction,
     member_count: members.length,
     members,
+    action_image_url: null,
   };
 }
 
@@ -574,31 +627,15 @@ function buildSummary(tabs: TaxonomyTab[]): TaxonomySummary {
   };
 }
 
-function countIncludedLabelGroups(pages: PageNode[], selection: Record<string, boolean>): number {
-  let n = 0;
-  for (const page of pages) {
-    const viewport: ViewportMode = page.active_viewport ?? "pc";
-    const byTag = candidateMapForPage(page);
-    const platformOf = (tagId: number): Platform | undefined => byTag.get(tagId)?.platform;
-    const tree = treeForPage(page);
-    for (const cat of tree.categories) {
-      for (const act of cat.actions) {
-        for (const lg of act.label_groups) {
-          if (!labelGroupVisibleInTaggingViewport(lg, viewport, platformOf)) continue;
-          const tagIds = lg.member_tag_ids ?? lg.members.map((m) => m.tag_id);
-          if (!tagIds.some((id) => isSelected(page.page_url, id, selection))) continue;
-          n += 1;
-        }
-      }
-    }
-  }
-  return n;
+/** Count selected action-level taxonomy rows (카테고리+액션 1줄). */
+function countIncludedActionRows(pages: PageNode[], selection: Record<string, boolean>): number {
+  return collectLabelRowsFromTree(pages, selection).length;
 }
 
 export function buildTaxonomyViewModel(input: BuildTaxonomyInput): TaxonomyViewModel {
   const total = input.pages.reduce((n, p) => n + candidatesOf(p).length, 0);
   const labelRows = collectLabelRowsFromTree(input.pages, input.selection);
-  const selectedCount = countIncludedLabelGroups(input.pages, input.selection);
+  const selectedCount = countIncludedActionRows(input.pages, input.selection);
   const siteKey = siteKeyFromPages(input.pages);
 
   const fallbackByPage = new Map(
@@ -606,18 +643,21 @@ export function buildTaxonomyViewModel(input: BuildTaxonomyInput): TaxonomyViewM
   );
 
   const { commonRows, pageRows } = partitionTaxonomyLabelRows(labelRows);
-  const commonEventTab: TaxonomyCategoryTab = {
-    kind: "page_category",
-    tab_id: "events:common",
-    tab_label: "공통",
-    scope: "common",
-    event_rows: sortLabelRows(commonRows).map((row) =>
-      labelRowToUniqueRow(row, fallbackByPage.get(row.page_url) ?? null, input.descriptions)
-    ),
-  };
-
   const categoryTabs: TaxonomyCategoryTab[] = [];
   for (const viewport of ["pc", "mo"] as const) {
+    const vpSuffix = viewport.toUpperCase();
+    const commonForVp = sortLabelRows(commonRows.filter((row) => row.viewport === viewport));
+    if (commonForVp.length) {
+      categoryTabs.push({
+        kind: "page_category",
+        tab_id: `common:${viewport}`,
+        tab_label: `공통_${vpSuffix}`,
+        scope: viewport,
+        event_rows: commonForVp.map((row) =>
+          labelRowToUniqueRow(row, fallbackByPage.get(row.page_url) ?? null, input.descriptions)
+        ),
+      });
+    }
     const viewportRows = pageRows.filter((row) => row.viewport === viewport);
     const pageCategories = sortPageCategories([
       ...new Set(viewportRows.map((row) => row.page_category)),
@@ -626,22 +666,20 @@ export function buildTaxonomyViewModel(input: BuildTaxonomyInput): TaxonomyViewM
       const tabRows = sortLabelRows(
         viewportRows.filter((row) => row.page_category === page_category)
       );
-    const event_rows = tabRows.map((r) =>
-      labelRowToUniqueRow(r, fallbackByPage.get(r.page_url) ?? null, input.descriptions)
-    );
       categoryTabs.push({
         kind: "page_category",
         tab_id: `${viewport}:${page_category}`,
-        tab_label: page_category,
+        tab_label: `${page_category}_${vpSuffix}`,
         scope: viewport,
-        event_rows,
+        event_rows: tabRows.map((r) =>
+          labelRowToUniqueRow(r, fallbackByPage.get(r.page_url) ?? null, input.descriptions)
+        ),
       });
     }
   }
 
   const commonTab = buildCommonTab(labelRows, input.pages, input.descriptions);
-  // No "값 목록" tab — link_url / direction / count lists removed from taxonomy UI.
-  const tabs: TaxonomyTab[] = [commonEventTab, ...categoryTabs, commonTab];
+  const tabs: TaxonomyTab[] = [...categoryTabs, commonTab];
   const summary = buildSummary(tabs);
 
   return {
@@ -670,9 +708,7 @@ export function taxonomyToSnapshotPayload(vm: TaxonomyViewModel): TaxonomySnapsh
 /** Flat row for Excel export (unique event row) — slim columns. */
 export function uniqueEventRowToFlatRecord(row: TaxonomyUniqueEventRow): Record<string, string> {
   const isPageView = row.event_name === "페이지뷰";
-  const category = isPageView
-    ? ""
-    : normalizeTaxonomyDisplay(row.category_display ?? row.category ?? "");
+  const category = normalizeTaxonomyDisplay(row.category_display ?? row.category ?? "");
   const action = isPageView
     ? ""
     : normalizeTaxonomyDisplay(row.action_display ?? row.action ?? "");
@@ -680,7 +716,7 @@ export function uniqueEventRowToFlatRecord(row: TaxonomyUniqueEventRow): Record<
   return {
     이벤트명: row.event_name,
     시점: row.trigger || "-",
-    카테고리: isPageView ? "-" : formatTaxonomyCell(category),
+    카테고리: formatTaxonomyCell(category),
     액션: isPageView ? "-" : formatTaxonomyCell(action),
     라벨: isPageView ? "-" : formatTaxonomyCell(label),
     설명: row.description || "-",

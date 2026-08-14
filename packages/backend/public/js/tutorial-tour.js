@@ -8,12 +8,9 @@
   const DEMO_PROJECT = "ibank-ax 이벤트 설계";
 
   const WIZARD_NAMES = {
-    0: "1단계 · 프로젝트",
-    1: "2단계 · 사이트 입력",
-    2: "3단계 · 분석 실행",
-    3: "4단계 · 태그 선택",
-    4: "5단계 · 택소노미 확인",
-    5: "6단계 · 보내기",
+    0: "1단계 · 프로젝트 선택",
+    1: "2단계 · 사이트 입력 & 분석",
+    2: "3단계 · 택소노미 확인 및 수정",
   };
 
   const NEXT_HINT = "확인했으면 「다음」을 누르세요.";
@@ -89,14 +86,14 @@
       step: 1,
       target: "#panel-1 h2, #panel-1 .lead",
       title: "1. 이 단계에서 하는 일",
-      body: "사이트 주소를 넣고 페이지 URL을 불러온 뒤, 분석할 페이지만 선택·확정합니다. 이 단계에서는 분석을 실행하지 않습니다.",
+      body: "사이트 주소를 넣고 페이지 URL을 불러온 뒤, 분석할 페이지만 선택·확정하고 바로 분석합니다.",
       prepare: "site",
     },
     {
       step: 1,
       target: "#site-discover-card, #discover-urls-btn",
       title: "2. 페이지 URL 불러오기",
-      body: "도메인만(예: ibank-ax.com) 넣어도 됩니다. 「페이지 불러오기」로 후보를 모읍니다. 서브도메인이 필요하면 체크하세요. 분석은 실행하지 않습니다.",
+      body: "도메인만(예: ibank-ax.com) 넣어도 됩니다. 「페이지 불러오기」를 누르면 사이트맵과 페이지를 알아서 찾습니다.",
       prepare: "site",
     },
     {
@@ -117,7 +114,7 @@
       step: 1,
       target: "#url-summary",
       title: "5. 등록 요약",
-      body: "총 URL·PC/MO 건수가 요약됩니다. 「다음」을 누르면 2단계(분석 실행)로만 이동합니다. 분석은 2단계에서 시작합니다.",
+      body: "총 URL·PC/MO 건수가 요약됩니다. 같은 화면 아래 「분석 시작」을 누르면 자동으로 초안을 만듭니다.",
       prepare: "site",
     },
 
@@ -296,9 +293,9 @@
     /* ——— 4. 택소노미 ——— */
     {
       step: 4,
-      target: "#taxonomy-platform-tabs",
-      title: "1. 공통 / PC / MO",
-      body: "선택한 태그가 이벤트·카테고리·액션·라벨 표로 정리됩니다(샘플). 탭으로 플랫폼별 초안을 나눕니다.",
+      target: "#taxonomy-page-tabs",
+      title: "1. 공통_PC / 페이지_PC",
+      body: "선택한 태그가 이벤트·카테고리·액션·라벨 표로 정리됩니다(샘플). 탭은 공통_PC, 메인_PC처럼 한 줄로 나뉩니다.",
       prepare: "taxonomy",
     },
     {
@@ -365,7 +362,20 @@
   }
 
   function currentWizardStep() {
-    return Number(document.querySelector(".wizard-panel.active")?.dataset.step || 0);
+    return Number(window.WizardApp?.getStep?.() ?? document.querySelector(".wizard-panel.active")?.dataset.step ?? 0);
+  }
+
+  function tipsForVisibleStep(step) {
+    if (step === 0) return ALL_TIPS.filter((tip) => tip.step === 0);
+    if (step === 1) return ALL_TIPS.filter((tip) => tip.step === 1 || tip.step === 2);
+    return ALL_TIPS.filter(
+      (tip) =>
+        tip.step === 4 ||
+        (tip.step === 5 &&
+          (tip.target.includes("#export-stats") ||
+            tip.target.includes("#taxonomy-export-btn") ||
+            tip.target.includes("#new-wizard-btn")))
+    );
   }
 
   function withNextHint(body, isLast) {
@@ -1438,7 +1448,7 @@
       forWizardStep != null && forWizardStep !== ""
         ? Number(forWizardStep)
         : currentWizardStep();
-    activeTips = ALL_TIPS.filter((t) => t.step === wizardStep);
+    activeTips = tipsForVisibleStep(wizardStep);
     if (!activeTips.length) {
       window.alert("이 단계의 사용방법이 아직 없습니다.");
       return;
@@ -1520,10 +1530,11 @@
     /** For docs/QA: tip catalog grouped by wizard step */
     listSteps: function () {
       const out = {};
-      for (const tip of ALL_TIPS) {
-        const key = tip.step;
-        if (!out[key]) out[key] = { name: WIZARD_NAMES[key], tips: [] };
-        out[key].tips.push({ title: tip.title, body: tip.body });
+      for (const key of [0, 1, 2]) {
+        out[key] = { name: WIZARD_NAMES[key], tips: [] };
+        for (const tip of tipsForVisibleStep(key)) {
+          out[key].tips.push({ title: tip.title, body: tip.body });
+        }
       }
       return out;
     },

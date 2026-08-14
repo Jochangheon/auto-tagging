@@ -1,9 +1,12 @@
+import { readFile } from "node:fs/promises";
 import type {
   TaxonomyCategoryTab,
   TaxonomyUniqueEventRow,
   TaxonomyViewModel,
 } from "@autotag/shared";
 import ExcelJS from "exceljs";
+import { actionCaptureAbsPath } from "../crawl/element-capture.js";
+import { captureAbsPath } from "../crawl/page-capture.js";
 
 function safeSheetName(name: string): string {
   return name.replace(/[\\/?*[\]:]/g, "_").slice(0, 31);
@@ -24,9 +27,9 @@ function cellText(value: string | null | undefined): string {
   return t || "-";
 }
 
-const HEADERS = ["이벤트명", "시점", "카테고리", "액션", "라벨", "설명"] as const;
+const HEADERS = ["이벤트명", "시점", "카테고리", "액션", "라벨", "설명", "액션 이미지"] as const;
 
-const COL_WIDTHS = [14, 28, 18, 18, 28, 40];
+const COL_WIDTHS = [16, 32, 22, 22, 22, 42, 36];
 
 const HEADER_FILL: ExcelJS.Fill = {
   type: "pattern",
@@ -60,14 +63,37 @@ function eventRowValues(row: TaxonomyUniqueEventRow): string[] {
   return [
     cellText(row.event_name),
     cellText(row.trigger),
-    isPageView ? "-" : cellText(normalizedDisplay(row.category_display ?? row.category)),
+    cellText(normalizedDisplay(row.category_display ?? row.category)),
     isPageView ? "-" : cellText(normalizedDisplay(row.action_display ?? row.action)),
     isPageView ? "-" : cellText(row.label ?? row.label_example),
     cellText(row.description),
+    "",
   ];
 }
 
-function styleEventSheet(ws: ExcelJS.Worksheet, rows: TaxonomyUniqueEventRow[]): void {
+function parseActionImageRef(
+  url: string | null | undefined
+): { jobId: string; fileKey: string } | null {
+  if (!url) return null;
+  const m = /\/captures\/([^/]+)\/actions\/([^/?#]+)\.png/i.exec(url);
+  if (!m?.[1] || !m[2]) return null;
+  return { jobId: m[1], fileKey: m[2] };
+}
+
+function parsePageCaptureRef(
+  url: string | null | undefined
+): { jobId: string; viewport: "pc" | "mo" } | null {
+  if (!url) return null;
+  const m = /\/captures\/([^/]+)\/(pc|mo)\.png/i.exec(url);
+  if (!m?.[1] || !m[2]) return null;
+  return { jobId: m[1], viewport: m[2].toLowerCase() as "pc" | "mo" };
+}
+
+async function styleEventSheet(
+  wb: ExcelJS.Workbook,
+  ws: ExcelJS.Worksheet,
+  rows: TaxonomyUniqueEventRow[]
+): Promise<void> {
   ws.columns = COL_WIDTHS.map((w) => ({ width: w }));
 
   const header = ws.addRow([...HEADERS]);
@@ -80,26 +106,48 @@ function styleEventSheet(ws: ExcelJS.Worksheet, rows: TaxonomyUniqueEventRow[]):
   });
 
   if (!rows.length) {
-    const empty = ws.addRow(["데이터 없음", "", "", "", "", ""]);
+    const empty = ws.addRow(["데이터 없음", "", "", "", "", "", ""]);
     empty.eachCell((cell) => {
       cell.font = { ...BODY_FONT, italic: true, color: { argb: "FF6B7280" } };
       cell.border = THIN_BORDER;
     });
   } else {
-    rows.forEach((row, idx) => {
+    for (let idx = 0; idx < rows.length; idx += 1) {
+      const row = rows[idx]!;
       const excelRow = ws.addRow(eventRowValues(row));
-      excelRow.height = 18;
+      excelRow.height = 128;
       excelRow.eachCell((cell, colNumber) => {
         cell.font = BODY_FONT;
         cell.border = THIN_BORDER;
         cell.alignment = {
           vertical: "middle",
-          horizontal: colNumber <= 2 ? "center" : "left",
-          wrapText: colNumber === 6,
+          horizontal: colNumber <= 2 || colNumber === 7 ? "center" : "left",
+          wrapText: true,
         };
         if (idx % 2 === 1) cell.fill = ZEBRA_FILL;
       });
-    });
+
+      const actionRef = parseActionImageRef(row.action_image_url);
+      const pageRef = parsePageCaptureRef(row.action_image_url);
+      if (!actionRef && !pageRef) continue;
+      try {
+        const buf = actionRef
+          ? await readFile(actionCaptureAbsPath(actionRef.jobId, actionRef.fileKey))
+          : await readFile(captureAbsPath(pageRef!.jobId, pageRef!.viewport));
+        const imageId = wb.addImage({
+          buffer: Buffer.from(buf) as unknown as ExcelJS.Buffer,
+          extension: "png",
+        });
+        const excelRowNumber = idx + 2; // 1-based, header is row 1
+        ws.addImage(imageId, {
+          tl: { col: 6, row: excelRowNumber - 1 },
+          ext: { width: 220, height: 120 },
+          editAs: "oneCell",
+        });
+      } catch {
+        // image missing — leave blank cell
+      }
+    }
   }
 
   ws.views = [{ state: "frozen", ySplit: 1, activeCell: "A2" }];
@@ -121,7 +169,7 @@ function styleSimpleSheet(
   header.eachCell((cell) => {
     cell.fill = HEADER_FILL;
     cell.font = HEADER_FONT;
-    cell.alignment = { vertical: "middle", horizontal: "center" };
+    cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
     cell.border = THIN_BORDER;
   });
   if (!rows.length) {
@@ -152,40 +200,41 @@ export async function buildTaxonomyWorkbook(vm: TaxonomyViewModel): Promise<Exce
   const eventTabs = vm.tabs.filter(
     (tab): tab is TaxonomyCategoryTab => tab.kind === "page_category"
   );
-  const commonRows: TaxonomyUniqueEventRow[] = [];
-  const scopedRows = new Map<string, { label: string; rows: TaxonomyUniqueEventRow[] }>();
+  const scopedRows = new Map<string, { label: string; rows: TaxonomyUniqueEventRow[]; order: number }>();
 
   for (const tab of eventTabs) {
     for (const row of tab.event_rows) {
-      if (tab.scope === "common") {
-        commonRows.push(row);
-        continue;
-      }
       const viewport = tab.scope === "mo" || tab.scope === "pc" ? tab.scope : rowViewport(row);
-      const label = normalizedDisplay(tab.tab_label) || "기타";
-      const key = `${viewport}:${label}`;
-      const group = scopedRows.get(key) ?? {
-        label: `${viewport.toUpperCase()}_${label}`,
+      let label = normalizedDisplay(tab.tab_label) || "기타";
+      if (tab.scope === "common" && !/_(PC|MO)$/i.test(label)) {
+        label = `공통_${viewport.toUpperCase()}`;
+      } else if (!/_(PC|MO)$/i.test(label)) {
+        label = `${label}_${viewport.toUpperCase()}`;
+      }
+      const group = scopedRows.get(label) ?? {
+        label,
         rows: [],
+        order: scopedRows.size,
       };
       group.rows.push(row);
-      scopedRows.set(key, group);
+      scopedRows.set(label, group);
     }
   }
 
-  const commonSheet = wb.addWorksheet(safeSheetName("공통"), {
-    properties: { defaultRowHeight: 18 },
+  const ordered = [...scopedRows.values()].sort((a, b) => {
+    const aCommon = a.label.startsWith("공통_") ? 0 : 1;
+    const bCommon = b.label.startsWith("공통_") ? 0 : 1;
+    if (aCommon !== bCommon) return aCommon - bCommon;
+    const aMo = a.label.endsWith("_MO") ? 1 : 0;
+    const bMo = b.label.endsWith("_MO") ? 1 : 0;
+    if (aMo !== bMo) return aMo - bMo;
+    return a.order - b.order;
   });
-  styleEventSheet(commonSheet, commonRows);
-
-  for (const viewport of ["pc", "mo"] as const) {
-    for (const [key, group] of scopedRows) {
-      if (!key.startsWith(`${viewport}:`)) continue;
-      const ws = wb.addWorksheet(safeSheetName(group.label), {
-        properties: { defaultRowHeight: 18 },
-      });
-      styleEventSheet(ws, group.rows);
-    }
+  for (const group of ordered) {
+    const ws = wb.addWorksheet(safeSheetName(group.label), {
+      properties: { defaultRowHeight: 72 },
+    });
+    await styleEventSheet(wb, ws, group.rows);
   }
 
   for (const tab of vm.tabs) {
@@ -210,7 +259,7 @@ export async function buildTaxonomyWorkbook(vm: TaxonomyViewModel): Promise<Exce
 
   if (!wb.worksheets.length) {
     const empty = wb.addWorksheet("empty");
-    styleEventSheet(empty, []);
+    await styleEventSheet(wb, empty, []);
   }
 
   return wb;

@@ -1,14 +1,11 @@
 /**
- * 택소노미 초안 마법사 — DB 프로젝트 선택 + 5단계 오케스트레이션
+ * 택소노미 초안 마법사 — 프로젝트 → 사이트 분석 → 택소노미의 3단계 오케스트레이션
  */
 (function () {
   const STEPS = [
-    { id: 0, label: "프로젝트" },
-    { id: 1, label: "사이트 입력" },
-    { id: 2, label: "분석 실행" },
-    { id: 3, label: "태그 선택" },
-    { id: 4, label: "택소노미 확인" },
-    { id: 5, label: "보내기" },
+    { id: 0, label: "프로젝트 선택" },
+    { id: 1, label: "사이트 입력 & 분석" },
+    { id: 2, label: "택소노미 확인 및 수정" },
   ];
 
   const $ = (id) => document.getElementById(id);
@@ -16,6 +13,7 @@
   let state = defaultState();
   let projects = [];
   let projectLoading = false;
+  let projectOpening = false;
   let settingsContinueAfterSave = false;
   /** "create" = dialog only until save; "edit" = existing project settings */
   let settingsMode = "edit";
@@ -105,6 +103,11 @@
     }
   }
 
+  window.__WIZARD_ON_TAXONOMY_META__ = (labels) => {
+    state.columnLabels = labels || null;
+    scheduleSave();
+  };
+
   /** workspace-core confirmSelection 등에서 호출 */
   window.__WIZARD_CENTER_PROGRESS_SHOW__ = (opts) => {
     showWizardCenterProgress(opts);
@@ -132,8 +135,16 @@
       sessionId: null,
       urls: [],
       jobs: [],
+      columnLabels: null,
       savedAt: null,
     };
+  }
+
+  function migratePersistedStep(stored) {
+    const raw = Number(stored?.step);
+    if (stored?.flow_version === 3) return Math.max(1, Math.min(2, raw || 1));
+    if (raw >= 4) return 2;
+    return 1;
   }
 
   /** @deprecated single viewport — migrated to viewports[] */
@@ -173,8 +184,10 @@
     if (el) el.textContent = "DB 저장 중…";
     const persisted = {
       step: Math.max(1, state.step),
+      flow_version: 3,
       urls: state.urls,
       jobs: state.jobs,
+      column_labels: state.columnLabels || null,
       savedAt: state.savedAt,
     };
     try {
@@ -221,6 +234,10 @@
       status.textContent = "DB에서 프로젝트를 불러오는 중…";
       list.innerHTML = "";
       return;
+    }
+    if (projectOpening) {
+      status.hidden = false;
+      status.textContent = "선택한 프로젝트를 여는 중…";
     }
     if (!projects.length) {
       status.hidden = false;
@@ -316,12 +333,16 @@
   }
 
   async function openProject(projectId, opts = {}) {
-    if (!projectId || projectLoading) return;
-    projectLoading = true;
-    renderProjects();
+    if (!projectId || projectOpening || projectLoading) return;
+    projectOpening = true;
+    const status = $("project-list-status");
+    if (status) {
+      status.hidden = false;
+      status.textContent = "선택한 프로젝트를 여는 중…";
+    }
     try {
       const res = await fetch("/api/projects/" + encodeURIComponent(projectId));
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.ok) throw new Error(data.error || "project_open_failed");
       const stored = data.state || {};
       const { figma: _ignoredFigma, ...storedRest } = stored;
@@ -333,32 +354,41 @@
         ...defaultState(),
         ...storedRest,
         step: 0,
-        resumeStep: Math.max(1, Math.min(5, Number(stored.step) || 1)),
+        resumeStep: migratePersistedStep(stored),
         projectId: data.project.id,
         projectName: data.project.name,
         projectDescription: data.project.description || "",
         sessionId: data.session_id || null,
         urls,
         jobs,
+        columnLabels: stored.column_labels || stored.columnLabels || null,
       };
       resetProgressTracking();
       window.Workspace?.resetSession?.();
       if (state.sessionId && window.Workspace) {
         await window.Workspace.loadSession(state.sessionId);
       }
+      if (state.columnLabels && window.Workspace?.setColumnLabels) {
+        window.Workspace.setColumnLabels(state.columnLabels);
+      }
       const saveStatus = $("autosave-status");
       if (saveStatus) saveStatus.textContent = "DB에서 불러옴";
       renderAll();
       resetDiscoverForProject();
-      renderProjects();
       renderProjectContext();
-      if (opts.showSettings) showProjectSettings();
+      if (opts.showSettings) {
+        showProjectSettings();
+        return;
+      }
+      const resume = Math.max(1, Math.min(2, Number(state.resumeStep) || 1));
+      goToStep(resume, { force: true });
     } catch (err) {
-      alert("프로젝트 데이터를 불러오지 못했습니다.");
+      const message = err && err.message ? String(err.message) : "project_open_failed";
+      alert("프로젝트 데이터를 불러오지 못했습니다.\n" + message);
       console.error("project open failed:", err);
     } finally {
-      projectLoading = false;
-      renderProjects();
+      projectOpening = false;
+      if (state.step === 0) renderProjects();
     }
   }
 
@@ -464,7 +494,7 @@
         await loadProjects();
         await openProject(projectId);
         if (shouldContinue && state.step === 0) {
-          const resume = Math.max(1, Math.min(5, Number(state.resumeStep) || 1));
+          const resume = Math.max(1, Math.min(2, Number(state.resumeStep) || 1));
           goToStep(resume, { force: true });
         }
         return;
@@ -493,7 +523,7 @@
       const shouldContinue = settingsContinueAfterSave;
       closeProjectSettings();
       if (shouldContinue && state.step === 0) {
-        const resume = Math.max(1, Math.min(5, Number(state.resumeStep) || 1));
+        const resume = Math.max(1, Math.min(2, Number(state.resumeStep) || 1));
         goToStep(resume, { force: true });
       }
     } catch (err) {
@@ -531,34 +561,20 @@
     return state.urls.filter((e) => isValidUrl(e.url));
   }
 
-  /** 실제로 끝난 마지막 단계 (-1 = 프로젝트 미선택, 0 = 프로젝트만 선택). */
+  /** 실제로 끝난 마지막 표시 단계 (-1 = 프로젝트 미선택). */
   function getCompletedStep() {
     if (!state.projectId) return -1;
-    if (!validUrlEntries().length) return 0;
-
-    let n = 1;
-    if (!state.jobs.some((j) => j.status === "done")) return n;
-
-    n = 2;
+    if (!validUrlEntries().length || !state.jobs.some((j) => j.status === "done")) return 0;
     const ws = window.Workspace;
-    if (!ws) return n;
-
-    const { selected } = ws.countSelectionTotals();
-    if (!selected) return n;
-
-    n = 3;
+    if (!ws) return 1;
     const tax = ws.getTaxonomyData();
-    if (!tax?.tabs?.length) return n;
-
-    return 4;
+    return tax?.tabs?.length ? 2 : 1;
   }
 
   /** 지금 이동 가능한 최대 단계 (완료된 단계 + 1). */
   function getMaxAccessibleStep() {
-    const completed = getCompletedStep();
-    if (completed < 0) return 0;
-    if (completed === 0) return 1;
-    return Math.min(completed + 1, 5);
+    if (!state.projectId) return 0;
+    return window.Workspace?.getTaxonomyData()?.tabs?.length ? 2 : 1;
   }
 
   function renderStepNav() {
@@ -633,7 +649,7 @@
   }
 
   function renderProgressBar() {
-    const pct = Math.round((Math.max(0, progressBarCompleted) / 5) * 100);
+    const pct = Math.round((Math.max(0, progressBarCompleted) / 2) * 100);
     const fill = $("wizard-progress-fill");
     if (fill) fill.style.width = pct + "%";
     const done = $("wizard-progress-done");
@@ -655,7 +671,7 @@
     document.querySelectorAll(".wizard-panel").forEach((p) => {
       p.classList.toggle("active", Number(p.dataset.step) === step);
     });
-    if (step === 2) {
+    if (step === 1) {
       if (!state.jobs.length) initJobsFromUrls();
       renderJobCards();
       renderAnalyzeLead();
@@ -669,17 +685,11 @@
           : "프로젝트를 선택하거나 새로 만드세요.";
       }
     }
-    if (step === 3 && window.Workspace) {
-      window.Workspace.renderSessionTree();
-      void window.Workspace.ensureCapturePreview();
-      updatePhase2Banner();
-      scheduleLayoutReflow();
-    }
     updateGlobalAnalyzeBar();
-    if (step === 4 && window.Workspace) {
+    if (step === 2 && window.Workspace) {
       window.Workspace.renderTaxonomyView();
+      renderExportPanel();
     }
-    if (step === 5) renderExportPanel();
   }
 
   function scheduleLayoutReflow() {
@@ -691,40 +701,29 @@
   function canProceedFrom(step) {
     if (step === 0) return Boolean(state.projectId);
     if (step === 1) return validUrlEntries().length > 0;
-    if (step === 2) return state.jobs.some((j) => j.status === "done");
-    if (step === 3) {
-      const ws = window.Workspace;
-      if (!ws) return false;
-      const { selected } = ws.countSelectionTotals();
-      return selected > 0;
-    }
-    if (step === 4) return !!window.Workspace?.getTaxonomyData()?.tabs?.length;
-    return true;
+    return !!window.Workspace?.getTaxonomyData()?.tabs?.length;
   }
 
   function updateNextButton() {
     const btn = $("wizard-next");
     if (!btn) return;
+    btn.hidden = state.step === 2;
     if (state.step === 0) {
       btn.textContent = "프로젝트 열기";
-    } else if (state.step === 3) {
-      btn.textContent = "확정하고 다음";
-    } else if (state.step === 5) {
-      btn.textContent = "완료";
     } else {
-      btn.textContent = "다음";
+      btn.textContent = state.jobs.some((j) => j.status === "done")
+        ? "택소노미 초안 만들기"
+        : "분석 시작";
     }
-    if (state.step === 2) {
-      // 배치가 아직 돌고 있어도 한 페이지라도 완료됐으면 태그 선택으로 진입 가능.
-      // 나머지 페이지는 백그라운드에서 계속 분석되어 3단계에 라이브로 추가된다.
-      btn.disabled = !canProceedFrom(2);
+    if (state.step === 1) {
+      btn.disabled = analyzeRunning || !canProceedFrom(1);
       return;
     }
     btn.disabled = !canProceedFrom(state.step);
   }
 
   function goToStep(n, opts = {}) {
-    if (n < 0 || n > 5) return;
+    if (n < 0 || n > 2) return;
     const maxAccessible = getMaxAccessibleStep();
     if (n > maxAccessible && !opts.force) return;
 
@@ -862,8 +861,9 @@
     const rows = visible
       .map((link) => {
         const checked = discoveredSelected.has(link.url) ? " checked" : "";
-        const title = link.title
-          ? '<span class="discover-item-title">' + escapeHtml(link.title) + "</span>"
+        const title = String(link.title || "").trim();
+        const titleHtml = title
+          ? ' <span class="discover-item-title">(' + escapeHtml(title) + ")</span>"
           : "";
         return (
           '<label class="discover-item">' +
@@ -875,9 +875,8 @@
           '<span class="discover-item-text">' +
           '<span class="discover-item-url">' +
           escapeHtml(link.url) +
-          "</span>" +
-          title +
-          "</span></label>"
+          titleHtml +
+          "</span></span></label>"
         );
       })
       .join("");
@@ -1005,15 +1004,10 @@
       return;
     }
     if (seedEl) seedEl.value = seedUrl;
-    const limit = Number($("discover-limit")?.value) || 50;
-    const sitemapModeRaw = String($("discover-sitemap-mode")?.value || "include");
-    const sitemap =
-      sitemapModeRaw === "only" || sitemapModeRaw === "skip" || sitemapModeRaw === "include"
-        ? sitemapModeRaw
-        : "include";
-    const includeSubdomains = !!$("discover-include-subdomains")?.checked;
-    // Per-step timeouts are shorter on the server; overall budget for large steps.
-    const timeoutMs = limit >= 200 ? 120_000 : 90_000;
+    const limit = 100;
+    const sitemap = "include";
+    const includeSubdomains = false;
+    const timeoutMs = 90_000;
 
     discoverAbort = new AbortController();
     discoverShowLimit = 40;
@@ -1210,13 +1204,13 @@
     renderUrlSummary();
     updateNextButton();
     scheduleSave();
-    // Stay on step 1 — never auto-start analysis from discover/confirm.
+    // Stay on the combined site/analyze step until the user starts analysis.
     setDiscoverStatus(
       "확정 " +
         mapped.length +
         "개" +
         (keptOther.length ? " (+다른 사이트 " + keptOther.length + "개 유지)" : "") +
-        ". 「다음」으로 2단계 목록만 준비됩니다. 분석은 2단계에서 「분석 시작」을 눌러야 합니다.",
+        ". 아래 「분석 시작」을 누르면 택소노미 초안을 자동으로 만듭니다.",
       false
     );
   }
@@ -1254,10 +1248,12 @@
           escapeAttr(entry.alias || "") +
           '" placeholder="탭명 (비우면 AI 자동)" title="입력하지 않으면 분석 AI가 페이지 성격을 판단해 자동 입력합니다." />' +
           '<div class="viewport-toggle" role="group" aria-label="분석 뷰포트 (복수 선택 가능)">' +
-          '<button type="button" data-vp="pc" class="' + (hasPc ? "active" : "") + '" title="PC 분석 포함">PC</button>' +
-          '<button type="button" data-vp="mo" class="' + (hasMo ? "active" : "") + '" title="MO 분석 포함">MO</button>' +
+          '<button type="button" data-vp="pc" class="' + (hasPc ? "active" : "") + '" title="PC 분석 포함"><span class="vp-dot" aria-hidden="true"></span>PC</button>' +
+          '<button type="button" data-vp="mo" class="' + (hasMo ? "active" : "") + '" title="MO 분석 포함"><span class="vp-dot" aria-hidden="true"></span>MO</button>' +
           "</div>" +
+          '<div class="url-row-actions"></div>' +
           '<button type="button" class="btn-secondary url-del">삭제</button>' +
+          '<div class="url-row-status"></div>' +
           "</div>"
         );
       })
@@ -1305,8 +1301,211 @@
         scheduleSave();
       });
     });
+    bindUrlRowActionDelegate(container);
+    updateUrlRowStatuses();
     renderUrlSummary();
     refreshWizardSteps();
+  }
+
+  /* ── 분석 상태를 URL 행에 직접 표시 (대상 목록 = 실행 목록) ── */
+
+  function urlRowJobs(entry) {
+    const url = (entry?.url || "").trim();
+    if (!url) return [];
+    return state.jobs.filter((j) => (j.url || "").trim() === url);
+  }
+
+  /** 캡처 단계는 done 상태지만 아직 진행 중이므로 별도 상태로 본다. */
+  function effectiveJobStatus(job) {
+    if (job.status === "done" && job.capturePhase === "running") return "capturing";
+    return job.status;
+  }
+
+  function jobStatusText(job) {
+    const status = effectiveJobStatus(job);
+    if (status === "capturing") {
+      return "이미지 캡쳐중 " + (job.captureCurrent ?? 0) + "/" + (job.captureTotal ?? "?");
+    }
+    if (status === "done") {
+      return (job.fromCache ? "DB 불러옴" : "완료") + " · 후보 " + (job.candidateCount ?? "?") + "개";
+    }
+    if (status === "running") return phaseLabel(job.analyzePhase) || "태깅중…";
+    if (status === "queued") {
+      if (isJobInWaitQueue(jobKey(job))) return "대기풀 · 현재 작업 뒤 실행";
+      if (analyzeRunning && activeAnalyzeKeys?.has(jobKey(job))) return "배치 대기";
+      return "대기 중";
+    }
+    if (status === "login_required") return friendlyAnalyzeError(job.error || "로그인 필요", job);
+    if (status === "failed") return "실패 · " + friendlyAnalyzeError(job.error || "오류", job);
+    return "";
+  }
+
+  function urlRowStatusHtml(jobs) {
+    if (!jobs.length) {
+      return '<span class="url-row-hint">분석 대기 — PC·MO를 고르고 「분석 시작」을 누르세요.</span>';
+    }
+    let html = "";
+    for (const job of jobs) {
+      const status = effectiveJobStatus(job);
+      html +=
+        '<span class="url-vp-chip ' + status + '">' +
+        '<span class="job-status-dot ' + status + '"></span>' +
+        (job.viewport === "mo" ? "MO" : "PC") +
+        " · " +
+        escapeHtml(jobStatusText(job)) +
+        "</span>";
+    }
+    const running = jobs.find((j) => j.status === "running");
+    const capturing = jobs.find((j) => effectiveJobStatus(j) === "capturing");
+    if (running) {
+      html +=
+        '<span class="url-row-progress"><span class="url-row-progress-fill" style="width:' +
+        (running.progress || 0) +
+        '%"></span></span>';
+    } else if (capturing) {
+      html +=
+        '<span class="url-row-progress"><span class="url-row-progress-fill phase2" style="width:' +
+        (capturing.captureProgress || 0) +
+        '%"></span></span>';
+    }
+    return html;
+  }
+
+  function urlRowActionsHtml(jobs) {
+    if (!jobs.length) return "";
+    const runnable = jobs.filter(
+      (j) =>
+        j.status === "queued" &&
+        !isJobInWaitQueue(jobKey(j)) &&
+        !(analyzeRunning && activeAnalyzeKeys?.has(jobKey(j)))
+    );
+    const failed = jobs.filter((j) => j.status === "failed" || j.status === "login_required");
+    const needsLogin = jobs.find(
+      (j) =>
+        j.status === "login_required" ||
+        (j.status === "failed" && (j.errorKind === "login_required" || isMemberAreaUrl(j.url)))
+    );
+    let html = "";
+    if (needsLogin) {
+      html +=
+        '<button type="button" class="btn-secondary btn-compact url-job-login" data-login-url="' +
+        escapeAttr(needsLogin.url) +
+        '">로그인하기</button>';
+    }
+    if (failed.length) {
+      html +=
+        '<button type="button" class="btn-secondary btn-compact url-job-retry" data-job-keys="' +
+        escapeAttr(failed.map(jobKey).join("|")) +
+        '">다시 시도</button>';
+    } else if (runnable.length) {
+      html +=
+        '<button type="button" class="btn-primary btn-compact url-job-run" data-job-keys="' +
+        escapeAttr(runnable.map(jobKey).join("|")) +
+        '" title="이 URL만 지금 분석합니다">분석 실행</button>';
+    } else if (jobs.every((j) => j.status === "done") && !jobs.some((j) => isJobInWaitQueue(jobKey(j)))) {
+      html +=
+        '<button type="button" class="btn-secondary btn-compact url-job-retry" data-job-keys="' +
+        escapeAttr(jobs.map(jobKey).join("|")) +
+        '">다시 분석</button>';
+    }
+    return html;
+  }
+
+  function updateUrlRowStatuses() {
+    const container = $("url-rows");
+    if (!container) return;
+    container.querySelectorAll(".url-row").forEach((row) => {
+      const entry = state.urls[Number(row.dataset.idx)];
+      if (!entry) return;
+      const jobs = urlRowJobs(entry);
+      row.querySelectorAll(".viewport-toggle button").forEach((btn) => {
+        const job = jobs.find((j) => j.viewport === btn.dataset.vp);
+        btn.dataset.jobStatus = job ? effectiveJobStatus(job) : "";
+      });
+      const statusEl = row.querySelector(".url-row-status");
+      if (statusEl) statusEl.innerHTML = urlRowStatusHtml(jobs);
+      const actionsEl = row.querySelector(".url-row-actions");
+      if (actionsEl) actionsEl.innerHTML = urlRowActionsHtml(jobs);
+      row.classList.toggle("job-running", jobs.some((j) => j.status === "running"));
+      row.classList.toggle(
+        "job-failed",
+        jobs.some((j) => j.status === "failed" || j.status === "login_required")
+      );
+      row.classList.toggle(
+        "job-done",
+        jobs.length > 0 && jobs.every((j) => j.status === "done")
+      );
+    });
+  }
+
+  function bindUrlRowActionDelegate(container) {
+    if (!container || container.dataset.actionsBound === "1") return;
+    container.dataset.actionsBound = "1";
+    container.addEventListener("click", (event) => {
+      const target = event.target instanceof Element ? event.target : null;
+      if (!target) return;
+      const login = target.closest(".url-job-login");
+      if (login) {
+        const url = login.dataset.loginUrl || "";
+        const host = hostKeyOf(url);
+        if (host) autoOpenedLoginHosts.delete(host);
+        void startInteractiveLoginUi(url);
+        return;
+      }
+      const run = target.closest(".url-job-run");
+      if (run) {
+        void runUrlJobs((run.dataset.jobKeys || "").split("|").filter(Boolean), false);
+        return;
+      }
+      const retry = target.closest(".url-job-retry");
+      if (retry) {
+        void runUrlJobs((retry.dataset.jobKeys || "").split("|").filter(Boolean), true);
+      }
+    });
+  }
+
+  /** 한 URL의 PC/MO 작업을 한 번에 실행·재실행한다. */
+  async function runUrlJobs(keys, force) {
+    const jobs = keys
+      .map((key) => state.jobs.find((j) => jobKey(j) === key))
+      .filter(
+        (job) =>
+          job &&
+          !isJobInWaitQueue(jobKey(job)) &&
+          !(analyzeRunning && activeAnalyzeKeys?.has(jobKey(job)))
+      );
+    if (!jobs.length) return;
+
+    for (const job of jobs) {
+      if (force) {
+        job.forceReanalyze = true;
+        job.status = "queued";
+        job.fromCache = false;
+        job.capturePhase = null;
+        job.captureProgress = 0;
+        job.candidateCount = null;
+      }
+      job.progress = 0;
+      job.error = null;
+      job.analyzePhase = null;
+    }
+    const runKeys = jobs.map(jobKey);
+    scheduleSave();
+
+    if (analyzeRunning) {
+      enqueueAnalyzeKeys(runKeys, force ? runKeys : []);
+      renderJobCards();
+      updateGlobalAnalyzeBar();
+      return;
+    }
+
+    renderJobCards();
+    updateGlobalAnalyzeBar();
+    await runBatchAnalyze(false, {
+      skipInit: true,
+      onlyKeys: runKeys,
+      forceKeys: force ? runKeys : [],
+    });
   }
 
   function upsertAuthSessionLocal(data) {
@@ -1662,10 +1861,10 @@
     const list = $("analyze-guide-list");
     if (!list) return;
     list.innerHTML =
-      "<li>대기 항목은 카드의 <strong>분석 실행</strong>으로 한 건씩, 또는 상단 <strong>분석 시작</strong>으로 한꺼번에 돌릴 수 있습니다.</li>" +
-      "<li>완료 항목은 해당 카드의 <strong>다시 분석</strong>을 눌렀을 때만 새로 실행합니다.</li>" +
-      "<li><strong>태깅 → 이름붙이기 → 이미지 캡쳐</strong> 순으로 진행되며, 이름붙이기까지 끝나면 3단계로 넘어갈 수 있습니다.</li>" +
-      "<li>캡처는 백그라운드로 이어지며, 아직이면 「이미지 캡쳐중…」으로 표시됩니다.</li>";
+      "<li>진행 상태는 각 URL 행에 바로 표시됩니다. 한 건만 돌리려면 그 행의 <strong>분석 실행</strong>을 누르세요.</li>" +
+      "<li>완료된 행은 <strong>다시 분석</strong>을 눌렀을 때만 새로 실행합니다.</li>" +
+      "<li><strong>태깅 → 이름붙이기 → 이미지 캡쳐 → 택소노미 생성</strong> 순으로 자동 진행됩니다.</li>" +
+      "<li>로그인이 필요하면 해당 행에 <strong>로그인하기</strong> 버튼이 나타납니다. (/mypage 등)</li>";
   }
 
   function renderAnalyzeLead() {
@@ -1682,7 +1881,7 @@
 
     if (!total) {
       lead.textContent =
-        "1단계에서 입력한 URL이 위 목록에 표시됩니다. 분석 시작을 누르면 진행됩니다.";
+        "URL을 확정하면 각 행에서 바로 분석하고 진행 상태를 확인할 수 있습니다.";
       return;
     }
 
@@ -1700,8 +1899,8 @@
       const phaseTxt = parts.length ? parts.join(" · ") : prog.listLabel;
       lead.textContent =
         prog.mode === "batch"
-          ? "선택 항목 진행 중 (" + phaseTxt + "). 끝나면 태그를 고를 수 있습니다."
-          : "목록 순서대로 진행 중 (" + phaseTxt + "). 페이지 하나가 끝나면 태그를 고를 수 있습니다.";
+          ? "선택 항목 진행 중 (" + phaseTxt + "). 끝나면 택소노미 초안을 자동으로 만듭니다."
+          : "목록 순서대로 진행 중 (" + phaseTxt + "). 끝나면 택소노미 초안을 자동으로 만듭니다.";
       return;
     }
 
@@ -1717,13 +1916,13 @@
         total +
         "건 중 " +
         done +
-        "건 완료. 완료된 페이지가 있으면 다음 단계(태그 선택)로 넘어갈 수 있습니다.";
+        "건 완료. 남은 분석이 끝나면 택소노미 초안으로 자동 이동합니다.";
       return;
     }
 
     if (done === total) {
       lead.textContent =
-        "전체 " + total + "건 분석이 끝났습니다. 다음 단계에서 태그를 확인·선택하세요.";
+        "전체 " + total + "건 분석이 끝났습니다. 택소노미 초안을 만드는 중입니다.";
       return;
     }
 
@@ -1921,6 +2120,7 @@
         skipInit: true,
         onlyKeys: next.onlyKeys,
         forceKeys: next.forceKeys || next.onlyKeys,
+        deferAutoConfirm: true,
       });
     }
   }
@@ -2008,7 +2208,8 @@
     if (!container) return;
     if (!state.jobs.length) {
       container.innerHTML =
-        '<p class="caption analyze-page-empty">1단계에서 입력한 URL이 여기에 표시됩니다.</p>';
+        '<p class="caption analyze-page-empty">위에서 확정한 URL이 여기에 표시됩니다.</p>';
+      updateUrlRowStatuses();
       renderAnalyzeLead();
       return;
     }
@@ -2172,6 +2373,7 @@
     });
 
     if (panel) panel.scrollTop = scrollTop;
+    updateUrlRowStatuses();
     const pendingCount = state.jobs.filter((job) => job.status === "queued").length;
     const startButton = $("start-analyze-btn");
     if (startButton && !analyzeRunning) {
@@ -2287,6 +2489,15 @@
         logoutBtn.style.display = "inline-flex";
       }
     }
+  }
+
+  async function autoConfirmAndAdvance() {
+    const ws = window.Workspace;
+    if (!ws || !state.sessionId || !state.jobs.some((j) => j.status === "done")) return false;
+    const { total } = ws.countSelectionTotals();
+    if (!total) return false;
+    await ws.confirmSelection({ auto: true, selectAll: true });
+    return !!ws.getTaxonomyData()?.tabs?.length;
   }
 
   async function runBatchAnalyze(onlyFailed = false, opts = {}) {
@@ -2555,6 +2766,9 @@
     // 대기풀에 쌓인 「다시 시도/다시 분석」을 이어서 실행
     if (!analyzeAbort) {
       await drainAnalyzeWaitQueue();
+      if (!opts.deferAutoConfirm && !analyzeWaitQueue.length) {
+        await autoConfirmAndAdvance();
+      }
     }
   }
 
@@ -2744,7 +2958,7 @@
       sample
         .map((r) => {
           const isPageView = r.event_name === "페이지뷰";
-          const category = isPageView ? "" : r.category_display || r.category || "";
+          const category = r.category_display || r.category || "";
           const action = isPageView ? "" : r.action_display || r.action || "";
           const label = isPageView ? "" : r.label || r.label_example || "";
           return (
@@ -2779,44 +2993,25 @@
   async function onNext() {
     if (state.step === 0) {
       if (!state.projectId) return;
-      const resume = Math.max(1, Math.min(5, Number(state.resumeStep) || 1));
+      const resume = Math.max(1, Math.min(2, Number(state.resumeStep) || 1));
       goToStep(resume, { force: true });
       return;
     }
 
-    if (state.step === 3) {
-      const ws = window.Workspace;
-      if (!ws) return;
-      const { selected } = ws.countSelectionTotals();
-      if (!selected) return;
-      $("wizard-next").disabled = true;
-      try {
-        await ws.confirmSelection();
-      } finally {
-        updateNextButton();
+    if (state.step === 1 && canProceedFrom(1)) {
+      if (window.Workspace?.getTaxonomyData()?.tabs?.length) {
+        goToStep(2);
+        return;
+      }
+      if (!state.jobs.length) initJobsFromUrls();
+      const hasPending = state.jobs.some((j) => j.status === "queued" || j.status === "failed");
+      if (hasPending) {
+        await runBatchAnalyze();
+      } else {
+        await autoConfirmAndAdvance();
       }
       return;
     }
-
-    if (state.step === 4) {
-      if (!canProceedFrom(4)) return;
-      goToStep(5);
-      return;
-    }
-
-    if (state.step === 5) {
-      saveState();
-      return;
-    }
-
-    if (state.step === 1 && canProceedFrom(1)) {
-      initJobsFromUrls();
-      renderJobCards();
-      goToStep(2, { force: true });
-      return;
-    }
-
-    if (state.step < 5) goToStep(state.step + 1);
   }
 
   function onPrev() {
@@ -2893,7 +3088,8 @@
   window.__WIZARD_ON_CONFIRM__ = () => {
     window.Workspace.renderTaxonomyView();
     notifyWizardCompletionIfChanged();
-    goToStep(4);
+    renderExportPanel();
+    goToStep(2, { force: true });
     scheduleSave();
   };
 
@@ -2913,15 +3109,15 @@
     renderProjectContext();
     updateNextButton();
     refreshWizardSteps();
-    if (state.step === 5) renderExportPanel();
+    if (state.step === 2) renderExportPanel();
     if (state.sessionId && window.Workspace?.loadSession) {
       void window.Workspace.loadSession(state.sessionId).then(() => {
         refreshWizardSteps();
-        if (state.step >= 4) window.Workspace.renderTaxonomyView?.();
+        if (state.step >= 2) window.Workspace.renderTaxonomyView?.();
       });
     } else {
       window.Workspace?.renderSessionTree?.();
-      if (state.step >= 4) window.Workspace?.renderTaxonomyView?.();
+      if (state.step >= 2) window.Workspace?.renderTaxonomyView?.();
     }
   };
 

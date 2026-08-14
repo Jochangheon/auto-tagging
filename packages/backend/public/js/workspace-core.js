@@ -85,18 +85,40 @@
     let taxonomyTabIndex = 0;
     let taxonomyScope = "common";
     let taxonomySearch = "";
-    let taxonomyExpandedRows = new Set();
     let taxonomySortCol = null;
     let taxonomySortAsc = true;
     let taxonomySelectedKeys = new Set();
     /** @type {Map<string, Record<string, string>>} */
     let taxonomyDrafts = new Map();
     let taxonomySaveInFlight = false;
-    /** Pick-stage multi-edit selection: key -> { pageUrl, pageViewport, tagIds } */
-    let pickEditTargets = new Map();
-    /** Currently open inline editor key on pick tree */
-    let pickInlineEditKey = null;
-    let pickSaveInFlight = false;
+    const DEFAULT_COLUMN_LABELS = {
+      action_image: "액션 이미지",
+      event_name: "이벤트",
+      category: "카테고리",
+      action: "액션",
+      label: "라벨",
+      trigger: "발생 시점",
+      description: "설명",
+    };
+    let columnLabels = { ...DEFAULT_COLUMN_LABELS };
+
+    function columnLabel(key) {
+      return columnLabels[key] || DEFAULT_COLUMN_LABELS[key] || key;
+    }
+
+    function setColumnLabels(next) {
+      columnLabels = { ...DEFAULT_COLUMN_LABELS, ...(next || {}) };
+      if (taxonomyData) taxonomyData.column_labels = { ...columnLabels };
+    }
+
+    function commitColumnLabel(key, value) {
+      const next = String(value || "").trim() || DEFAULT_COLUMN_LABELS[key];
+      columnLabels[key] = next;
+      if (taxonomyData) taxonomyData.column_labels = { ...columnLabels };
+      if (typeof window.__WIZARD_ON_TAXONOMY_META__ === "function") {
+        window.__WIZARD_ON_TAXONOMY_META__(columnLabels);
+      }
+    }
     let selectionPersistTimer = null;
     let selectionDirty = false;
     let confirmInFlight = false;
@@ -236,6 +258,23 @@
       }, 400);
     }
 
+    async function selectAllCandidatesAndPersist() {
+      for (const page of sessionPages) {
+        for (const c of page.candidates || []) {
+          setItemSelected(page.page_url, c.tag_id, true);
+        }
+      }
+      updateSelectionSummary();
+      if (!devSessionId) return;
+      const res = await fetch("/api/dev/selection", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: devSessionId, selection: selectionState }),
+      });
+      if (!res.ok) throw new Error("전체 후보 포함 상태를 저장하지 못했습니다.");
+      selectionDirty = false;
+    }
+
     function mergeSelectionFromServer(serverSelection) {
       if (!serverSelection || typeof serverSelection !== "object") return;
       if (selectionDirty) {
@@ -322,6 +361,8 @@
 
     function taxonomyViewportOf(row, tab) {
       if (tab?.scope === "pc" || tab?.scope === "mo") return tab.scope;
+      const locVp = row?.members?.[0]?.element_location?.viewport;
+      if (locVp === "mo" || locVp === "pc") return locVp;
       const platform = String(
         row?.platform ||
           row?.members?.[0]?.params?.platform ||
@@ -330,21 +371,67 @@
       return platform.includes("mo") || platform.includes("mobile") ? "mo" : "pc";
     }
 
+    function isLegacyCommonTab(tab) {
+      if (!tab || tab.kind !== "page_category") return false;
+      if (tab.scope === "common") return true;
+      const label = String(tab.tab_label || "").trim();
+      return label === "공통" || tab.tab_id === "events:common";
+    }
+
+    function isCommonEventTab(tab) {
+      if (isLegacyCommonTab(tab)) return true;
+      const id = String(tab?.tab_id || "");
+      const label = String(tab?.tab_label || "").trim();
+      return id.startsWith("common:") || /^공통_/.test(label);
+    }
+
+    function flattenTaxonomyTabLabel(tab, viewport) {
+      const raw = taxonomyDisplayName(tab?.tab_label) || "기타";
+      if (/_(PC|MO)$/i.test(raw)) return raw;
+      return raw + "_" + String(viewport || "pc").toUpperCase();
+    }
+
+    function pageViewCategoryText(row) {
+      const existing = String(row?.category_display || row?.category || "").trim();
+      if (existing && existing !== "-") return existing;
+      const name = taxonomyDisplayName(row?.page_category) || "페이지";
+      return "페이지명 : " + name;
+    }
+
+    function openTaxonomyImagePopup(url) {
+      const dlg = document.getElementById("taxonomy-image-dialog");
+      const img = document.getElementById("taxonomy-image-dialog-img");
+      if (!dlg || !img || !url) return;
+      img.src = url;
+      if (typeof dlg.showModal === "function") dlg.showModal();
+      else dlg.setAttribute("open", "");
+    }
+
+    function taxonomyRowImageUrl(row) {
+      if (row?.action_image_url) return row.action_image_url;
+      for (const member of row?.members || []) {
+        const url = member.element_location?.capture_url;
+        if (url) return url;
+      }
+      const pageUrl = row?.members?.[0]?.page_url;
+      if (pageUrl) {
+        const page = sessionPages.find(
+          (p) => normalizeUrlClient(p.page_url) === normalizeUrlClient(pageUrl)
+        );
+        if (page?.capture_url) return page.capture_url;
+      }
+      return null;
+    }
+
     function getVisibleTaxonomyTabs() {
       if (!taxonomyData?.tabs?.length) return [];
-      return taxonomyData.tabs.filter((tab) => {
-        if (tab.kind === "values") return false;
-        if (taxonomyScope === "common") {
-          return tab.scope === "common" || tab.kind === "common";
-        }
-        return tab.kind === "page_category" && tab.scope === taxonomyScope;
-      });
+      return taxonomyData.tabs.filter((tab) => tab.kind === "page_category" || tab.kind === "common");
     }
 
     function normalizeTaxonomyData(raw) {
       if (!raw) return null;
       if (raw.version === 3 && Array.isArray(raw.tabs)) {
-        const commonRows = [];
+        const commonByVp = { pc: [], mo: [] };
         const scopedTabs = new Map();
         const utilityTabs = [];
         for (const tab of raw.tabs) {
@@ -363,6 +450,7 @@
             }
             continue;
           }
+          const legacyCommon = isLegacyCommonTab(tab);
           for (const sourceRow of tab.event_rows || []) {
             const row = {
               ...sourceRow,
@@ -390,13 +478,22 @@
                   }))
                 : [],
             };
-            if (isCommonTaxonomyRow(row, tab)) {
-              commonRows.push(row);
+            if (row.event_name === "페이지뷰") {
+              const pageCat = pageViewCategoryText(row);
+              row.category = pageCat;
+              row.category_display = pageCat;
+            } else if (isCommonEventTab(tab) || legacyCommon) {
+              row.category = "공통";
+              row.category_display = "공통";
+            }
+            if (legacyCommon || isCommonTaxonomyRow(row, tab)) {
+              const vp = taxonomyViewportOf(row, { ...tab, scope: undefined });
+              commonByVp[vp].push(row);
               continue;
             }
             const scope = taxonomyViewportOf(row, tab);
-            const label = taxonomyDisplayName(tab.tab_label) || "기타";
-            const key = `${scope}:${label}`;
+            const label = flattenTaxonomyTabLabel(tab, scope);
+            const key = scope + ":" + label;
             const grouped = scopedTabs.get(key) || {
               kind: "page_category",
               tab_id: key,
@@ -408,17 +505,27 @@
             scopedTabs.set(key, grouped);
           }
         }
-        const commonEventTab = {
-          kind: "page_category",
-          tab_id: "events:common",
-          tab_label: "공통",
-          scope: "common",
-          event_rows: commonRows,
-        };
+        const commonTabs = ["pc", "mo"]
+          .filter((vp) => commonByVp[vp].length)
+          .map((vp) => ({
+            kind: "page_category",
+            tab_id: "common:" + vp,
+            tab_label: "공통_" + vp.toUpperCase(),
+            scope: vp,
+            event_rows: commonByVp[vp],
+          }));
+        const pageTabs = [...scopedTabs.values()];
+        const orderedTabs = [];
+        for (const vp of ["pc", "mo"]) {
+          orderedTabs.push(...commonTabs.filter((tab) => tab.scope === vp));
+          orderedTabs.push(...pageTabs.filter((tab) => tab.scope === vp));
+        }
+        if (raw.column_labels) setColumnLabels(raw.column_labels);
         return {
           ...raw,
-          tabs: [commonEventTab, ...scopedTabs.values(), ...utilityTabs],
+          tabs: [...orderedTabs, ...utilityTabs],
           summary: raw.summary ?? { event_count: 0, parameter_count: 0 },
+          column_labels: { ...columnLabels },
         };
       }
       return null;
@@ -584,7 +691,6 @@
       taxonomyContentEl.hidden = false;
       taxonomySummaryBarEl.hidden = false;
       renderTaxonomySummary();
-      renderTaxonomyPlatformTabs();
       renderTaxonomyPageTabs();
       renderTaxonomyTable();
     }
@@ -695,7 +801,9 @@
       const isPageView = row.event_name === "페이지뷰";
       return {
         event_name: row.event_name || "",
-        page_category: isPageView ? "" : row.category_display || row.category || "",
+        page_category: isPageView
+          ? pageViewCategoryText(row)
+          : row.category_display || row.category || "",
         action: isPageView ? "" : row.action_display || row.action || "",
         label: isPageView ? "" : row.label || row.label_example || "",
         trigger: row.trigger || "",
@@ -748,8 +856,12 @@
       const dirtyCount = document.getElementById("taxonomy-dirty-count");
       const selected = taxonomySelectedKeys.size;
       if (bulkBar) {
-        bulkBar.hidden = selected === 0;
-        if (bulkCount) bulkCount.textContent = selected + "개 선택";
+        bulkBar.hidden = false;
+        if (bulkCount) {
+          bulkCount.textContent = selected
+            ? selected + "개 선택 · 한번에 수정"
+            : "한번에 수정하기";
+        }
       }
       const dirty = taxonomyDirtyCount();
       if (saveBar) {
@@ -874,19 +986,19 @@
       const act = String(document.getElementById("taxonomy-bulk-action")?.value || "").trim();
       const label = String(document.getElementById("taxonomy-bulk-label")?.value || "").trim();
       if (!cat && !act && !label) {
-        setStatus("일괄 적용할 값을 하나 이상 입력하세요.", true);
+        setStatus("바꿀 카테고리·액션·라벨을 하나 이상 입력하세요.", true);
         return;
       }
+      const tab = getActiveTaxonomyTab();
+      const visible = (tab?.event_rows || []).filter((r) => r.event_name !== "페이지뷰");
+      const targets = taxonomySelectedKeys.size
+        ? visible.filter((r) => taxonomySelectedKeys.has(r.row_key))
+        : visible;
       let applied = 0;
-      for (const key of taxonomySelectedKeys) {
-        const row = (taxonomyData?.tabs || [])
-          .filter((t) => t.kind === "page_category")
-          .flatMap((t) => t.event_rows || [])
-          .find((r) => r.row_key === key);
-        if (!row || row.event_name === "페이지뷰") continue;
-        if (cat) setTaxonomyDraftField(key, "page_category", cat);
-        if (act) setTaxonomyDraftField(key, "action", act);
-        if (label) setTaxonomyDraftField(key, "label", label);
+      for (const row of targets) {
+        if (cat) setTaxonomyDraftField(row.row_key, "page_category", cat);
+        if (act) setTaxonomyDraftField(row.row_key, "action", act);
+        if (label) setTaxonomyDraftField(row.row_key, "label", label);
         applied += 1;
       }
       if (!applied) {
@@ -894,7 +1006,7 @@
         return;
       }
       renderTaxonomyTable();
-      setStatus(applied + "개 행에 값을 반영했습니다. 아래 「변경 저장」을 눌러 확정하세요.", false);
+      setStatus(applied + "개 행을 수정했습니다. 아래 「변경 저장」을 눌러 확정하세요.", false);
     }
 
     function renderTaxonomyMatrixTable(tab) {
@@ -932,37 +1044,68 @@
       const allVisibleSelected =
         rows.length > 0 && rows.every((r) => taxonomySelectedKeys.has(r.row_key));
 
+      const headerInput = (key, sortCol) =>
+        "<span class='taxonomy-col-head'>" +
+        "<input type='text' class='taxonomy-col-label' data-col-key='" +
+        key +
+        "' value='" +
+        escapeAttr(columnLabel(key)) +
+        "' title='목록 이름 수정' />" +
+        (sortCol
+          ? "<button type='button' class='taxonomy-col-sort' data-sort='" +
+            sortCol +
+            "' title='정렬'>" +
+            (sortMark(sortCol) || "↕") +
+            "</button>"
+          : "") +
+        "</span>";
+
       const head =
         "<th class='event-stripe'></th>" +
         "<th class='taxonomy-check-col'><input type='checkbox' id='taxonomy-select-all' title='현재 목록 전체 선택'" +
         (allVisibleSelected ? " checked" : "") +
         " /></th>" +
-        "<th class='taxonomy-expand-col'></th>" +
-        "<th data-sort='event_name'>이벤트" +
-        sortMark("event_name") +
+        "<th class='taxonomy-thumb-col'>" +
+        headerInput("action_image") +
         "</th>" +
-        "<th data-sort='category'>카테고리" +
-        sortMark("category") +
+        "<th>" +
+        headerInput("event_name", "event_name") +
         "</th>" +
-        "<th data-sort='action'>액션" +
-        sortMark("action") +
+        "<th>" +
+        headerInput("category", "category") +
         "</th>" +
-        "<th data-sort='label'>라벨" +
-        sortMark("label") +
+        "<th>" +
+        headerInput("action", "action") +
         "</th>" +
-        "<th>발생 시점</th>" +
-        "<th>설명</th>";
+        "<th>" +
+        headerInput("label", "label") +
+        "</th>" +
+        "<th>" +
+        headerInput("trigger") +
+        "</th>" +
+        "<th>" +
+        headerInput("description") +
+        "</th>";
 
       let body = "";
       for (const r of rows) {
-        const expanded = taxonomyExpandedRows.has(r.row_key);
         const stripe = eventStripeColor(r.event_name);
         const chipCls = eventNameChipClass(r.event_name);
         const isPageView = r.event_name === "페이지뷰";
         const d = taxonomyDraftOf(r);
         const dirty = taxonomyDrafts.has(r.row_key);
         const selected = taxonomySelectedKeys.has(r.row_key);
-        const memberCount = (r.members || []).length;
+        const imageUrl = taxonomyRowImageUrl(r);
+        const thumb = imageUrl
+          ? "<button type='button' class='taxonomy-action-thumb-link' data-image-url='" +
+            escapeAttr(imageUrl) +
+            "' title='화면 이미지 크게 보기'><img class='taxonomy-action-thumb' src='" +
+            escapeAttr(imageUrl) +
+            "' alt='" +
+            (isPageView ? "페이지 화면" : "액션 영역") +
+            "' loading='lazy' /></button>"
+          : "<span class='cell-empty'>-</span>";
+        const labelValue = isPageView ? "" : d.label || "{{버튼명}}";
         body +=
           "<tr class='taxonomy-event-row" +
           (selected ? " is-selected" : "") +
@@ -979,27 +1122,18 @@
           (selected ? " checked" : "") +
           (isPageView ? " title='페이지뷰는 일괄 카/액/라 대상 아님'" : "") +
           " /></td>" +
-          "<td class='taxonomy-expand-col'><button type='button' class='taxonomy-expand-btn' data-expand='" +
-          escapeHtml(r.row_key) +
-          "' aria-expanded='" +
-          (expanded ? "true" : "false") +
-          "' title='연결 요소 " +
-          memberCount +
-          "개'>" +
-          (expanded ? "▾" : "▸") +
-          (memberCount > 1 ? "<span class='taxonomy-member-badge'>" + memberCount + "</span>" : "") +
-          "</button></td>" +
-          "<td><span class='taxonomy-event-chip " +
-          chipCls +
-          "'>" +
-          escapeHtml(d.event_name || r.event_name) +
-          "</span></td>" +
+          "<td class='taxonomy-thumb-col'>" +
+          thumb +
+          "</td>" +
           "<td>" +
-          (isPageView
-            ? "<span class='cell-empty'>-</span>"
-            : taxonomyInlineInput(r.row_key, "page_category", d.page_category, {
-                placeholder: "카테고리",
-              })) +
+          taxonomyInlineInput(r.row_key, "event_name", d.event_name || r.event_name, {
+            placeholder: "이벤트명",
+          }) +
+          "</td>" +
+          "<td>" +
+          taxonomyInlineInput(r.row_key, "page_category", d.page_category, {
+            placeholder: isPageView ? "페이지명 : 페이지" : "카테고리",
+          }) +
           "</td>" +
           "<td>" +
           (isPageView
@@ -1009,7 +1143,9 @@
           "<td>" +
           (isPageView
             ? "<span class='cell-empty'>-</span>"
-            : taxonomyInlineInput(r.row_key, "label", d.label, { placeholder: "라벨" })) +
+            : taxonomyInlineInput(r.row_key, "label", labelValue, {
+                placeholder: "{{버튼명}}",
+              })) +
           "</td>" +
           "<td class='cell-wrap'>" +
           taxonomyInlineInput(r.row_key, "trigger", d.trigger, {
@@ -1024,23 +1160,6 @@
           }) +
           "</td>" +
           "</tr>";
-
-        if (expanded && r.members?.length) {
-          body +=
-            "<tr class='taxonomy-member-row'><td></td><td></td><td></td><td colspan='6' class='taxonomy-member-summary'>" +
-            "연결 요소 " +
-            memberCount +
-            "개 · " +
-            escapeHtml(
-              r.members
-                .map((m) => m.label || ("#" + m.tag_id))
-                .slice(0, 8)
-                .join(", ")
-            ) +
-            (memberCount > 8 ? " …" : "") +
-            "<span class='taxonomy-member-note'> (표에서 바로 수정 · 미리보기/서랍 없음)</span>" +
-            "</td></tr>";
-        }
       }
 
       taxonomyTableWrapEl.innerHTML =
@@ -1050,16 +1169,25 @@
         (body || "<tr><td colspan='9'>없음</td></tr>") +
         "</tbody></table>";
 
-      taxonomyTableWrapEl.querySelectorAll("[data-sort]").forEach((th) => {
-        th.style.cursor = "pointer";
-        th.addEventListener("click", () => {
-          const col = th.dataset.sort;
+      taxonomyTableWrapEl.querySelectorAll(".taxonomy-col-sort").forEach((btn) => {
+        btn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const col = btn.dataset.sort;
           if (taxonomySortCol === col) taxonomySortAsc = !taxonomySortAsc;
           else {
             taxonomySortCol = col;
             taxonomySortAsc = true;
           }
           renderTaxonomyTable();
+        });
+      });
+      taxonomyTableWrapEl.querySelectorAll(".taxonomy-col-label").forEach((input) => {
+        input.addEventListener("click", (e) => e.stopPropagation());
+        input.addEventListener("change", () => {
+          commitColumnLabel(input.dataset.colKey, input.value);
+        });
+        input.addEventListener("blur", () => {
+          commitColumnLabel(input.dataset.colKey, input.value);
         });
       });
 
@@ -1092,18 +1220,6 @@
         });
       });
 
-      // Expand only via chevron — never toggle by clicking the whole row.
-      taxonomyTableWrapEl.querySelectorAll(".taxonomy-expand-btn").forEach((btn) => {
-        btn.addEventListener("click", (e) => {
-          e.stopPropagation();
-          const key = btn.dataset.expand;
-          if (!key) return;
-          if (taxonomyExpandedRows.has(key)) taxonomyExpandedRows.delete(key);
-          else taxonomyExpandedRows.add(key);
-          renderTaxonomyTable();
-        });
-      });
-
       taxonomyTableWrapEl.querySelectorAll(".taxonomy-inline-input").forEach((input) => {
         input.addEventListener("click", (e) => e.stopPropagation());
         input.addEventListener("keydown", (e) => e.stopPropagation());
@@ -1119,15 +1235,22 @@
         input.addEventListener("blur", commit);
       });
 
+      taxonomyTableWrapEl.querySelectorAll(".taxonomy-action-thumb-link").forEach((btn) => {
+        btn.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          openTaxonomyImagePopup(btn.dataset.imageUrl);
+        });
+      });
+
       updateTaxonomyEditBars();
     }
 
     function renderTaxonomyTable() {
       const tab = getActiveTaxonomyTab();
       if (!tab) {
-        const label = taxonomyScope === "mo" ? "MO" : taxonomyScope === "pc" ? "PC" : "공통";
         taxonomyTableWrapEl.innerHTML =
-          "<p class='empty'>" + label + " 택소노미 항목이 없습니다.</p>";
+          "<p class='empty'>택소노미 항목이 없습니다.</p>";
         return;
       }
       if (tab.kind === "common") {
@@ -1137,14 +1260,23 @@
       renderTaxonomyMatrixTable(tab);
     }
 
-    async function confirmSelection() {
+    async function confirmSelection(options = {}) {
       if (!devSessionId || confirmInFlight) return;
+      const auto = options.auto === true;
+      if (options.selectAll === true) {
+        try {
+          await selectAllCandidatesAndPersist();
+        } catch (err) {
+          setStatus(err.message || "전체 후보 포함 실패", true);
+          return;
+        }
+      }
       const { selected } = countSelectionTotals();
       if (!selected) {
         setStatus("선택된 항목이 없습니다.", true);
         return;
       }
-      if (!confirm("선택 " + selected + "개로 택소노미를 만듭니다. 계속할까요?")) return;
+      if (!auto && !confirm("선택 " + selected + "개로 택소노미를 만듭니다. 계속할까요?")) return;
       confirmInFlight = true;
       if (confirmBtn) confirmBtn.disabled = true;
       setBadge("progress", "확정 중");
@@ -1178,7 +1310,6 @@
         }
         taxonomyData = normalized;
         taxonomyTabIndex = 0;
-        taxonomyExpandedRows = new Set();
         taxonomySelectedKeys = new Set();
         taxonomyDrafts = new Map();
         if (typeof window.__WIZARD_CENTER_PROGRESS_UPDATE__ === "function") {
@@ -1870,158 +2001,6 @@
         openParamDrawer(ctx, li, { soft: true });
       });
       li.appendChild(btn);
-    }
-
-    function pickEditKeyOf(pageUrl, pageViewport, tagIds) {
-      return (
-        normalizeUrlClient(pageUrl) +
-        "::" +
-        (pageViewport === "mo" ? "mo" : "pc") +
-        "::" +
-        (tagIds || []).join(",")
-      );
-    }
-
-    function updatePickBulkBar() {
-      const bar = document.getElementById("pick-bulk-bar");
-      const countEl = document.getElementById("pick-bulk-count");
-      if (!bar) return;
-      const n = pickEditTargets.size;
-      bar.hidden = n === 0;
-      if (countEl) countEl.textContent = n + "개 수정 선택";
-    }
-
-    async function patchPickCandidates(pageUrl, pageViewport, tagIds, fields) {
-      const res = await fetch("/api/dev/candidates", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        credentials: "same-origin",
-        body: JSON.stringify({
-          session_id: devSessionId,
-          page_url: pageUrl,
-          viewport: pageViewport === "mo" ? "mo" : "pc",
-          tag_ids: tagIds,
-          page_category: fields.page_category,
-          action: fields.action,
-          label: fields.label,
-          merge_label: fields.label,
-          event_name: fields.event_name,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.ok) throw new Error(data.error || "저장 실패");
-      if (Array.isArray(data.pages) && data.pages.length) {
-        sessionPages = data.pages;
-      } else if (data.page) {
-        const idx = sessionPages.findIndex(
-          (p) =>
-            normalizeUrlClient(p.page_url) === normalizeUrlClient(data.page.page_url) &&
-            (p.active_viewport || "pc") === (data.page.active_viewport || "pc")
-        );
-        if (idx >= 0) sessionPages[idx] = data.page;
-        else sessionPages.push(data.page);
-      }
-      if (data.selection) mergeSelectionFromServer(data.selection);
-      return data;
-    }
-
-    async function savePickBulkEdits() {
-      if (!devSessionId || pickSaveInFlight || !pickEditTargets.size) return;
-      const cat = String(document.getElementById("pick-bulk-category")?.value || "").trim();
-      const act = String(document.getElementById("pick-bulk-action")?.value || "").trim();
-      const label = String(document.getElementById("pick-bulk-label")?.value || "").trim();
-      if (!cat && !act && !label) {
-        setStatus("일괄 적용할 값을 하나 이상 입력하세요.", true);
-        return;
-      }
-      pickSaveInFlight = true;
-      const btn = document.getElementById("pick-bulk-apply");
-      if (btn) btn.disabled = true;
-      try {
-        let saved = 0;
-        for (const target of [...pickEditTargets.values()]) {
-          const fields = {};
-          if (cat) fields.page_category = cat;
-          if (act) fields.action = act;
-          if (label) fields.label = label;
-          await patchPickCandidates(
-            target.pageUrl,
-            target.pageViewport,
-            target.tagIds,
-            fields
-          );
-          saved += 1;
-        }
-        pickEditTargets = new Map();
-        pickInlineEditKey = null;
-        rerenderTree();
-        updatePickBulkBar();
-        setStatus(saved + "개 후보를 저장했습니다.", false);
-      } catch (err) {
-        setStatus(err.message || "저장 실패", true);
-      } finally {
-        pickSaveInFlight = false;
-        if (btn) btn.disabled = false;
-      }
-    }
-
-    function attachPickInlineEditor(li, opts) {
-      const {
-        pageUrl,
-        pageViewport,
-        tagIds,
-        category,
-        action,
-        label,
-        editKey,
-      } = opts;
-      const wrap = document.createElement("div");
-      wrap.className = "pick-inline-edit";
-      wrap.addEventListener("click", (e) => e.stopPropagation());
-      wrap.innerHTML =
-        '<div class="pick-inline-fields">' +
-        '<label>카테고리<input type="text" data-field="page_category" value="' +
-        escapeAttr(category || "") +
-        '" /></label>' +
-        '<label>액션<input type="text" data-field="action" value="' +
-        escapeAttr(action || "") +
-        '" /></label>' +
-        '<label>라벨<input type="text" data-field="label" value="' +
-        escapeAttr(label || "") +
-        '" /></label>' +
-        "</div>" +
-        '<div class="pick-inline-actions">' +
-        '<button type="button" class="btn-secondary btn-compact pick-inline-cancel">취소</button>' +
-        '<button type="button" class="btn-primary btn-compact pick-inline-save">저장</button>' +
-        "</div>";
-      li.appendChild(wrap);
-      wrap.querySelector(".pick-inline-cancel")?.addEventListener("click", (e) => {
-        e.stopPropagation();
-        pickInlineEditKey = null;
-        rerenderTree();
-      });
-      wrap.querySelector(".pick-inline-save")?.addEventListener("click", async (e) => {
-        e.stopPropagation();
-        if (pickSaveInFlight) return;
-        const fields = {
-          page_category: String(wrap.querySelector('[data-field="page_category"]')?.value || "").trim(),
-          action: String(wrap.querySelector('[data-field="action"]')?.value || "").trim(),
-          label: String(wrap.querySelector('[data-field="label"]')?.value || "").trim(),
-        };
-        pickSaveInFlight = true;
-        try {
-          await patchPickCandidates(pageUrl, pageViewport, tagIds, fields);
-          pickInlineEditKey = null;
-          pickEditTargets.delete(editKey);
-          updatePickBulkBar();
-          rerenderTree();
-          setStatus("후보를 저장했습니다.", false);
-        } catch (err) {
-          setStatus(err.message || "저장 실패", true);
-        } finally {
-          pickSaveInFlight = false;
-        }
-      });
     }
 
     function applyJobResult(data) {
@@ -3916,8 +3895,6 @@
             const showAreaBadge = !!act.flattened;
             const catName = cat.display_category || cat.category || "";
             const actName = act.display_action || act.action || "";
-            const labelName = lg.display_label || lg.label || "";
-            const editKey = pickEditKeyOf(pageUrl, rowViewport, lg.member_tag_ids);
 
             const li = document.createElement("li");
             li.className = "label-row";
@@ -3929,36 +3906,11 @@
               isItemSelected(pageUrl, id)
             );
             if (!anySelected) li.classList.add("excluded");
-            if (pickEditTargets.has(editKey)) li.classList.add("pick-edit-selected");
-            if (pickInlineEditKey === editKey) li.classList.add("is-editing");
 
             const rowMain = document.createElement("div");
             rowMain.className = "tree-item-main";
             const rowCb = createSelectCheckbox(pageUrl, lg.member_tag_ids);
             rowMain.appendChild(rowCb);
-
-            const editCb = document.createElement("input");
-            editCb.type = "checkbox";
-            editCb.className = "tree-edit-cb";
-            editCb.title = "일괄 수정 대상";
-            editCb.checked = pickEditTargets.has(editKey);
-            editCb.addEventListener("mousedown", (e) => e.stopPropagation());
-            editCb.addEventListener("click", (e) => e.stopPropagation());
-            editCb.addEventListener("change", (e) => {
-              e.stopPropagation();
-              if (editCb.checked) {
-                pickEditTargets.set(editKey, {
-                  pageUrl,
-                  pageViewport: rowViewport,
-                  tagIds: lg.member_tag_ids.slice(),
-                });
-              } else {
-                pickEditTargets.delete(editKey);
-              }
-              li.classList.toggle("pick-edit-selected", editCb.checked);
-              updatePickBulkBar();
-            });
-            rowMain.appendChild(editCb);
 
             rowMain.insertAdjacentHTML(
               "beforeend",
@@ -3969,20 +3921,8 @@
             );
             li.appendChild(rowMain);
 
-            const editBtn = document.createElement("button");
-            editBtn.type = "button";
-            editBtn.className = "pick-edit-btn";
-            editBtn.textContent = pickInlineEditKey === editKey ? "닫기" : "수정";
-            editBtn.title = "카/액/라 바로 수정";
-            editBtn.addEventListener("click", (e) => {
-              e.stopPropagation();
-              pickInlineEditKey = pickInlineEditKey === editKey ? null : editKey;
-              rerenderTree();
-            });
-            li.appendChild(editBtn);
-
             li.addEventListener("click", (e) => {
-              if (e.target.closest(".tree-select-cb, .tree-edit-cb, .pick-edit-btn, .pick-inline-edit, .param-btn")) {
+              if (e.target.closest(".tree-select-cb, .param-btn")) {
                 return;
               }
               e.stopPropagation();
@@ -3995,24 +3935,11 @@
               );
             });
 
-            if (pickInlineEditKey === editKey) {
-              attachPickInlineEditor(li, {
-                pageUrl,
-                pageViewport: rowViewport,
-                tagIds: lg.member_tag_ids,
-                category: catName,
-                action: actName,
-                label: labelName,
-                editKey,
-              });
-            }
-
             listEl.appendChild(li);
           }
         }
       }
       restoreParamDrawerHighlight();
-      updatePickBulkBar();
     }
 
     function renderList(tree, groups, labelCount) {
@@ -4449,20 +4376,17 @@
       renderTaxonomyTable();
     });
 
-    document.getElementById("taxonomy-expand-all")?.addEventListener("click", () => {
-      const tab = getActiveTaxonomyTab();
-      if (tab?.kind !== "page_category") return;
-      for (const row of tab.event_rows || []) taxonomyExpandedRows.add(row.row_key);
-      renderTaxonomyTable();
+    const taxonomyImageDialog = document.getElementById("taxonomy-image-dialog");
+    const taxonomyImageDialogClose = document.getElementById("taxonomy-image-dialog-close");
+    taxonomyImageDialogClose?.addEventListener("click", () => taxonomyImageDialog?.close());
+    taxonomyImageDialog?.addEventListener("click", (e) => {
+      if (e.target === taxonomyImageDialog) taxonomyImageDialog.close();
     });
-    document.getElementById("taxonomy-collapse-all")?.addEventListener("click", () => {
-      taxonomyExpandedRows = new Set();
-      renderTaxonomyTable();
+    taxonomyImageDialog?.addEventListener("close", () => {
+      const img = document.getElementById("taxonomy-image-dialog-img");
+      if (img) img.removeAttribute("src");
     });
-    document.getElementById("taxonomy-bulk-clear")?.addEventListener("click", () => {
-      taxonomySelectedKeys = new Set();
-      renderTaxonomyTable();
-    });
+
     document.getElementById("taxonomy-bulk-apply")?.addEventListener("click", () => {
       applyTaxonomyBulkFields();
     });
@@ -4474,15 +4398,6 @@
     document.getElementById("taxonomy-save-btn")?.addEventListener("click", () => {
       const keys = [...taxonomyDrafts.keys()];
       void saveTaxonomyDrafts(keys);
-    });
-
-    document.getElementById("pick-bulk-clear")?.addEventListener("click", () => {
-      pickEditTargets = new Map();
-      updatePickBulkBar();
-      rerenderTree();
-    });
-    document.getElementById("pick-bulk-apply")?.addEventListener("click", () => {
-      void savePickBulkEdits();
     });
 
     if (taxonomyExportBtn) {
@@ -4502,6 +4417,7 @@
       pollJobProgress,
       applyJobResult,
       confirmSelection,
+      selectAllCandidatesAndPersist,
       renderSessionTree,
       renderTaxonomyView,
       countSelectionTotals,
@@ -4511,6 +4427,7 @@
       setSessionId: (id) => { devSessionId = id; },
       getSessionPages: () => sessionPages,
       getTaxonomyData: () => taxonomyData,
+      setColumnLabels,
       setStatus,
       setBadge,
       refreshCredits,

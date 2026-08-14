@@ -78,7 +78,10 @@ export interface TaxonomyMemberCandidate {
   element_location?: ElementLocation | null;
 }
 
-/** Unique event = 1 matrix row (1 tagging label group). */
+/** Dynamic button label template — one taxonomy row covers all buttons under an action. */
+export const TAXONOMY_LABEL_BUTTON_VAR = "{{버튼명}}";
+
+/** Unique event = 1 matrix row (카테고리+액션, 라벨은 변수). */
 export interface TaxonomyUniqueEventRow {
   row_key: string;
   page_category: string;
@@ -93,7 +96,7 @@ export interface TaxonomyUniqueEventRow {
   /** Tagging tree action tier (act.display_action) */
   action: string | null;
   action_display: string | null;
-  /** Tagging tree label (lg.display_label) */
+  /** Tagging tree label — usually {{버튼명}} for click rows */
   label: string | null;
   /** @deprecated use label */
   label_example?: string | null;
@@ -101,6 +104,8 @@ export interface TaxonomyUniqueEventRow {
   direction: string | null;
   member_count: number;
   members: TaxonomyMemberCandidate[];
+  /** Cropped action screenshot with per-element boxes (served via /api/dev/captures/…) */
+  action_image_url?: string | null;
 }
 
 export interface TaxonomyCommonVariableRow {
@@ -152,6 +157,16 @@ export interface TaxonomySummary {
   parameter_count: number;
 }
 
+export interface TaxonomyColumnLabels {
+  action_image?: string;
+  event_name?: string;
+  category?: string;
+  action?: string;
+  label?: string;
+  trigger?: string;
+  description?: string;
+}
+
 export interface TaxonomyViewModel {
   version: 3;
   session_id: string;
@@ -162,6 +177,7 @@ export interface TaxonomyViewModel {
   total_count: number;
   summary: TaxonomySummary;
   tabs: TaxonomyTab[];
+  column_labels?: TaxonomyColumnLabels;
 }
 
 export interface TaxonomySnapshotPayload {

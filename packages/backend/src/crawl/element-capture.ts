@@ -45,6 +45,88 @@ export function elementCaptureApiUrl(jobId: string, tagId: number): string {
   return `/api/dev/captures/${jobId}/tags/${tagId}.png`;
 }
 
+export function actionCaptureRelPath(fileKey: string): string {
+  const safe = fileKey.replace(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 80);
+  return `actions/${safe || "action"}.png`;
+}
+
+export function actionCaptureAbsPath(jobId: string, fileKey: string): string {
+  return path.join(captureDir(), jobId, actionCaptureRelPath(fileKey));
+}
+
+export function actionCaptureApiUrl(jobId: string, fileKey: string): string {
+  const safe = fileKey.replace(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 80);
+  return `/api/dev/captures/${jobId}/actions/${safe || "action"}.png`;
+}
+
+/**
+ * Annotate the full page PNG with each member box so the taxonomy table
+ * shows where the action sits on the screen (not a tight crop).
+ */
+export async function cropActionGroupFromPagePng(
+  jobId: string,
+  viewport: ViewportMode,
+  boxes: CaptureBbox[],
+  options?: { pad?: number; fileKey?: string }
+): Promise<{ buffer: Buffer; width: number; height: number; absPath: string; url: string } | null> {
+  const valid = boxes.filter((b) => b && b.w > 0 && b.h > 0);
+  if (!valid.length) return null;
+
+  const pagePath = captureAbsPath(jobId, viewport);
+  try {
+    const meta = await sharp(pagePath).metadata();
+    const imgW = meta.width ?? 0;
+    const imgH = meta.height ?? 0;
+    if (imgW <= 0 || imgH <= 0) return null;
+
+    const maxW = 1400;
+    const maxH = 2400;
+    const scale = Math.min(1, maxW / imgW, maxH / imgH);
+    const outW = Math.max(2, Math.round(imgW * scale));
+    const outH = Math.max(2, Math.round(imgH * scale));
+
+    const border = Math.max(3, Math.round(4 * scale));
+    const rects = valid
+      .map((b) => {
+        const x = Math.max(0, Math.floor(b.x * scale));
+        const y = Math.max(0, Math.floor(b.y * scale));
+        const w = Math.max(4, Math.floor(b.w * scale));
+        const h = Math.max(4, Math.floor(b.h * scale));
+        return (
+          `<rect x="${x}" y="${y}" width="${w}" height="${h}" ` +
+          `fill="rgba(245,158,11,0.16)" stroke="#f59e0b" stroke-width="${border}"/>`
+        );
+      })
+      .join("");
+    const overlaySvg = Buffer.from(
+      `<svg width="${outW}" height="${outH}" xmlns="http://www.w3.org/2000/svg">${rects}</svg>`
+    );
+
+    const pipeline = sharp(pagePath);
+    if (scale < 1) pipeline.resize(outW, outH, { fit: "fill" });
+    const buffer = await pipeline
+      .composite([{ input: overlaySvg, top: 0, left: 0 }])
+      .png({ compressionLevel: 8 })
+      .toBuffer();
+
+    const fileKey =
+      options?.fileKey ||
+      `a_${valid.length}_${Math.round(valid[0]?.x ?? 0)}_${Math.round(valid[0]?.y ?? 0)}`;
+    const absPath = actionCaptureAbsPath(jobId, fileKey);
+    await mkdir(path.dirname(absPath), { recursive: true });
+    await writeFile(absPath, buffer);
+    return {
+      buffer,
+      width: outW,
+      height: outH,
+      absPath,
+      url: actionCaptureApiUrl(jobId, fileKey),
+    };
+  } catch {
+    return null;
+  }
+}
+
 const CLEAR_HIGHLIGHT_EVAL = `() => {
   document.querySelectorAll("[data-autotag-capture-highlight]").forEach((n) => n.remove());
 }`;

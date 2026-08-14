@@ -6,8 +6,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>택소노미 초안 만들기</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
-  <link rel="stylesheet" href="/css/workspace.css?v=20260807b" />
-  <link rel="stylesheet" href="/css/wizard.css?v=20260731f" />
+  <link rel="stylesheet" href="/css/workspace.css?v=20260814d" />
+  <link rel="stylesheet" href="/css/wizard.css?v=20260814a" />
   <link rel="stylesheet" href="/css/tutorial-tour.css?v=20260724d" />
 </head>
 <body>
@@ -65,11 +65,11 @@
           <div id="project-list" class="project-list"></div>
         </section>
 
-        <!-- 1. 사이트 입력 -->
+        <!-- 1. 사이트 입력 + 분석 실행 -->
         <section class="wizard-panel" id="panel-1" data-step="1">
-          <h2>사이트 입력</h2>
-          <p class="lead">도메인만 넣어도 하위 페이지 URL을 불러올 수 있습니다. 분석할 페이지만 선택·확정하세요. 이 단계에서는 분석을 실행하지 않습니다.</p>
-          <div class="wizard-tip">불러온 목록에서 체크한 URL만 「확정」됩니다. PC·MO는 확정 목록에서 켜고, 「다음」으로 2단계에 가면 분석할 수 있습니다.</div>
+          <h2>사이트 입력 &amp; 분석 실행</h2>
+          <p class="lead">사이트와 분석할 페이지만 정하면 자동으로 택소노미 초안을 만듭니다.</p>
+          <div class="wizard-tip">URL을 확정하면 같은 목록에서 분석까지 진행됩니다. 「분석 시작」을 누르면 각 행에 진행 상태가 표시되고, 끝나면 택소노미 초안으로 자동 이동합니다.</div>
 
           <div class="step1-cards">
           <div class="step1-url-col">
@@ -83,34 +83,11 @@
                   <input type="text" id="seed-url-input" class="seed-url-input" placeholder="example.com 또는 https://example.com" autocomplete="url" inputmode="url" spellcheck="false" />
                 </label>
                 <div class="site-discover-actions">
-                  <label class="site-discover-limit">
-                    <span>최대</span>
-                    <select id="discover-limit" aria-label="불러올 URL 최대 개수">
-                      <option value="50" selected>50</option>
-                      <option value="100">100</option>
-                      <option value="200">200</option>
-                      <option value="500">500</option>
-                    </select>
-                  </label>
-                  <label class="site-discover-limit" title="큰 사이트는 「사이트맵만」이 더 빠릅니다">
-                    <span>방식</span>
-                    <select id="discover-sitemap-mode" aria-label="URL 수집 방식">
-                      <option value="only" selected>사이트맵만(빠름)</option>
-                      <option value="include">전체</option>
-                    </select>
-                  </label>
-                  <label
-                    class="site-discover-subdomains"
-                    title="꺼두면 입력한 도메인만(www 포함). 켜면 blog·m 등 다른 서브도메인 페이지도 목록에 넣습니다."
-                  >
-                    <input type="checkbox" id="discover-include-subdomains" />
-                    <span>다른 서브도메인도</span>
-                  </label>
                   <button type="button" class="btn-primary" id="discover-urls-btn">페이지 불러오기</button>
                   <button type="button" class="btn-secondary" id="discover-stop-btn" hidden>중단</button>
                 </div>
                 <p class="site-discover-hint caption">
-                  「다른 서브도메인도」: 예) shop.example.com 입력 시, 기본은 그 도메인만. 체크하면 blog.example.com 등도 같이 찾습니다.
+                  주소를 넣으면 사이트맵과 페이지를 알아서 찾아 목록에 넣습니다.
                 </p>
                 <p class="site-discover-status caption" id="discover-status" hidden></p>
               </div>
@@ -132,70 +109,55 @@
               </div>
             </div>
 
-            <div class="url-list-card compact">
+            <div class="url-list-card compact url-target-card">
               <div class="url-list-head">
-                <span>분석 대상 URL (확정)</span>
-                <button type="button" class="btn-secondary" id="paste-urls-btn">직접 붙여넣기</button>
+                <span class="analyze-page-list-title">분석 대상 URL &amp; 진행 상태</span>
+                <div class="url-list-head-right">
+                  <span id="analyze-batch-status" class="caption"></span>
+                  <button type="button" class="btn-secondary btn-compact" id="paste-urls-btn">직접 붙여넣기</button>
+                </div>
               </div>
               <div class="url-rows" id="url-rows"></div>
-              <div class="url-list-foot">
+              <div class="url-list-foot url-list-foot-split">
                 <button type="button" class="btn-secondary" id="add-url-btn">+ URL 직접 추가</button>
+                <div class="analyze-toolbar">
+                  <button type="button" class="btn-secondary" id="retry-failed-btn" hidden>실패 항목만 다시 시도</button>
+                  <button type="button" class="btn-secondary" id="stop-analyze-btn" hidden>중단</button>
+                  <button type="button" class="btn-primary" id="start-analyze-btn">분석 시작</button>
+                </div>
               </div>
             </div>
             <div class="url-summary" id="url-summary"></div>
           </div>
           </div>
-        </section>
 
-        <!-- 2. 분석 실행 -->
-        <section class="wizard-panel" id="panel-2" data-step="2">
-          <h2>분석 실행</h2>
+          <div class="combined-analyze-section" id="panel-2">
+            <p class="lead analyze-lead-inline" id="analyze-lead"></p>
 
-          <div class="analyze-layout" id="analyze-layout">
-            <div class="analyze-main">
-              <div class="analyze-page-list">
-                <div class="analyze-page-list-head">
-                  <span class="analyze-page-list-title">분석 페이지 목록</span>
-                  <span id="analyze-batch-status" class="caption"></span>
-                </div>
-                <div class="job-cards" id="job-cards">
-                  <p class="caption analyze-page-empty">1단계에서 등록한 URL이 여기에 표시됩니다.</p>
-                </div>
-              </div>
-
-              <div id="interactive-login-bar" class="interactive-login-bar" hidden>
-                <span id="interactive-login-status" class="interactive-login-status"></span>
-                <button type="button" class="btn-secondary" id="interactive-login-complete" hidden>로그인 완료</button>
-                <button type="button" class="btn-ghost" id="interactive-login-cancel" hidden>창 닫기</button>
-              </div>
-
-              <div class="analyze-guide" id="analyze-guide">
-                <p class="lead" id="analyze-lead"></p>
-                <ul class="analyze-guide-list" id="analyze-guide-list">
-                  <li>미완료 페이지(PC/MO)만 분석하고 완료 항목은 목록 하단에 표시합니다.</li>
-                  <li>완료 항목은 카드의 <strong>다시 분석</strong>을 눌렀을 때만 새로 실행합니다.</li>
-                  <li><strong>태깅 → 이름붙이기 → 이미지 캡쳐</strong> 순으로 진행됩니다.</li>
-                  <li>로그인 필요 시 해당 사이트 로그인 창이 자동으로 열립니다. 로그인한 뒤 창을 닫거나 「로그인 완료」를 누르세요. (/mypage 등)</li>
-                </ul>
-              </div>
-
-              <div class="analyze-toolbar">
-                <button type="button" class="btn-primary" id="start-analyze-btn">분석 시작</button>
-                <button type="button" class="btn-secondary" id="retry-failed-btn" hidden>실패 항목만 다시 시도</button>
-                <button type="button" class="btn-secondary" id="stop-analyze-btn" hidden>중단</button>
-              </div>
-
-              <div id="progress-wrap" class="progress-wrap" aria-hidden="true">
-                <div class="progress-label">
-                  <span id="progress-stage">준비 중</span>
-                  <span id="progress-percent" class="percent">0%</span>
-                </div>
-                <div class="progress-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
-                  <div id="progress-fill" class="progress-bar-fill"></div>
-                </div>
-                <div id="progress-detail" class="progress-detail"></div>
-              </div>
+            <div id="interactive-login-bar" class="interactive-login-bar" hidden>
+              <span id="interactive-login-status" class="interactive-login-status"></span>
+              <button type="button" class="btn-secondary" id="interactive-login-complete" hidden>로그인 완료</button>
+              <button type="button" class="btn-ghost" id="interactive-login-cancel" hidden>창 닫기</button>
             </div>
+
+            <div id="progress-wrap" class="progress-wrap" aria-hidden="true">
+              <div class="progress-label">
+                <span id="progress-stage">준비 중</span>
+                <span id="progress-percent" class="percent">0%</span>
+              </div>
+              <div class="progress-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                <div id="progress-fill" class="progress-bar-fill"></div>
+              </div>
+              <div id="progress-detail" class="progress-detail"></div>
+            </div>
+
+            <details class="analyze-guide" id="analyze-guide">
+              <summary>분석 진행 방식 안내</summary>
+              <ul class="analyze-guide-list" id="analyze-guide-list"></ul>
+            </details>
+
+            <!-- 기존 카드 목록은 URL 행으로 합쳤지만, 내부 렌더링 호환을 위해 DOM에는 남겨둔다. -->
+            <div class="job-cards legacy-job-cards" id="job-cards" hidden></div>
           </div>
         </section>
 
@@ -231,23 +193,8 @@
             <input type="search" class="search-input" id="pick-search" placeholder="라벨 검색…" autocomplete="off" />
             <details class="pick-help">
               <summary>사용 팁</summary>
-              <p>▸는 펼치기, 행 클릭은 오른쪽 위치 확인입니다. 「수정」또는 일괄 체크로 카/액/라를 표처럼 바로 고칩니다. 포함 체크를 끈 항목은 택소노미에서 제외됩니다.</p>
+              <p>▸는 펼치기, 행 클릭은 오른쪽 위치 확인입니다. 포함 체크를 끈 항목은 택소노미에서 제외됩니다. 카/액/라 수정은 다음 택소노미 단계에서 합니다.</p>
             </details>
-          </div>
-          <div id="pick-bulk-bar" class="pick-bulk-bar" hidden>
-            <div class="taxonomy-bulk-left">
-              <strong id="pick-bulk-count">0개 수정 선택</strong>
-              <span class="taxonomy-bulk-hint">미리보기를 가리지 않고 카/액/라를 한 번에 바꿉니다</span>
-            </div>
-            <div class="taxonomy-bulk-fields">
-              <label>카테고리<input type="text" id="pick-bulk-category" placeholder="비우면 유지" /></label>
-              <label>액션<input type="text" id="pick-bulk-action" placeholder="비우면 유지" /></label>
-              <label>라벨<input type="text" id="pick-bulk-label" placeholder="비우면 유지" /></label>
-            </div>
-            <div class="taxonomy-bulk-actions">
-              <button type="button" class="btn-secondary" id="pick-bulk-clear">선택 해제</button>
-              <button type="button" class="btn-primary" id="pick-bulk-apply">선택항목 저장</button>
-            </div>
           </div>
 
           <div class="grid pick-grid">
@@ -304,38 +251,41 @@
           </div>
         </section>
 
-        <!-- 4. 택소노미 초안 -->
-        <section class="wizard-panel view-taxonomy-panel" id="panel-4" data-step="4">
-          <div id="view-taxonomy" class="view-taxonomy">
-            <div class="taxonomy-platform-tabs" id="taxonomy-platform-tabs" role="tablist" aria-label="플랫폼 구분">
-              <button type="button" class="taxonomy-platform-tab active" data-taxonomy-scope="common">공통</button>
-              <button type="button" class="taxonomy-platform-tab" data-taxonomy-scope="pc">PC</button>
-              <button type="button" class="taxonomy-platform-tab" data-taxonomy-scope="mo">MO</button>
+        <!-- 2. 택소노미 확인 · 수정 -->
+        <section class="wizard-panel view-taxonomy-panel" id="panel-4" data-step="2">
+          <div class="taxonomy-result-head">
+            <div>
+              <span class="combined-section-kicker">자동 생성 완료</span>
+              <h2>택소노미 확인 · 수정</h2>
+              <p>영역 이미지를 보면서 카테고리·액션·라벨을 바로 수정할 수 있습니다.</p>
             </div>
+            <div class="taxonomy-result-actions">
+              <button type="button" class="btn-secondary" id="new-wizard-btn">다른 프로젝트 선택</button>
+              <button type="button" class="btn-primary" id="taxonomy-export-btn">Excel 다운로드</button>
+            </div>
+          </div>
+          <div class="export-stats taxonomy-result-stats" id="export-stats"></div>
+          <div id="view-taxonomy" class="view-taxonomy">
+            <div class="taxonomy-platform-tabs" id="taxonomy-platform-tabs" role="tablist" aria-label="플랫폼 구분" hidden></div>
             <div class="taxonomy-page-tabs" id="taxonomy-page-tabs"></div>
             <div class="taxonomy-summary-bar" id="taxonomy-summary-bar" hidden>
               <div class="taxonomy-summary-chips" id="taxonomy-summary-chips"></div>
             </div>
             <div class="taxonomy-toolbar">
               <input type="search" id="taxonomy-search" placeholder="이벤트명 · 라벨 검색…" />
-              <div class="taxonomy-toolbar-actions">
-                <button type="button" class="btn-secondary taxonomy-tool-btn" id="taxonomy-expand-all">모두 펼치기</button>
-                <button type="button" class="btn-secondary taxonomy-tool-btn" id="taxonomy-collapse-all">모두 접기</button>
-              </div>
             </div>
-            <div id="taxonomy-bulk-bar" class="taxonomy-bulk-bar" hidden>
+            <div id="taxonomy-bulk-bar" class="taxonomy-bulk-bar">
               <div class="taxonomy-bulk-left">
-                <strong id="taxonomy-bulk-count">0개 선택</strong>
-                <span class="taxonomy-bulk-hint">카/액/라를 한 번에 바꿀 수 있습니다</span>
+                <strong id="taxonomy-bulk-count">한번에 수정하기</strong>
+                <span class="taxonomy-bulk-hint">체크한 행에 적용합니다. 없으면 현재 목록 전체에 적용합니다.</span>
               </div>
               <div class="taxonomy-bulk-fields">
-                <label>카테고리<input type="text" id="taxonomy-bulk-category" placeholder="비우면 유지" /></label>
-                <label>액션<input type="text" id="taxonomy-bulk-action" placeholder="비우면 유지" /></label>
-                <label>라벨<input type="text" id="taxonomy-bulk-label" placeholder="비우면 유지" /></label>
+                <label>카테고리<input type="text" id="taxonomy-bulk-category" placeholder="바꿀 카테고리" /></label>
+                <label>액션<input type="text" id="taxonomy-bulk-action" placeholder="바꿀 액션" /></label>
+                <label>라벨<input type="text" id="taxonomy-bulk-label" placeholder="바꿀 라벨" /></label>
               </div>
               <div class="taxonomy-bulk-actions">
-                <button type="button" class="btn-secondary" id="taxonomy-bulk-clear">선택 해제</button>
-                <button type="button" class="btn-primary" id="taxonomy-bulk-apply">선택항목에 적용</button>
+                <button type="button" class="btn-primary" id="taxonomy-bulk-apply">한번에 수정하기</button>
               </div>
             </div>
             <div id="taxonomy-save-bar" class="taxonomy-save-bar" hidden>
@@ -345,43 +295,13 @@
                 <button type="button" class="btn-primary" id="taxonomy-save-btn">변경 저장</button>
               </div>
             </div>
-            <div id="taxonomy-empty" class="taxonomy-empty">먼저 태그를 선택·확정하세요.</div>
+            <div id="taxonomy-empty" class="taxonomy-empty">분석을 실행하면 택소노미 초안이 자동으로 표시됩니다.</div>
             <div id="taxonomy-content" class="taxonomy-inner" hidden>
               <div class="taxonomy-table-wrap" id="taxonomy-table-wrap"></div>
             </div>
           </div>
         </section>
 
-        <!-- 5. 검토 &보내기 -->
-        <section class="wizard-panel" id="panel-5" data-step="5">
-          <div class="export-panel-inner">
-            <div class="export-done">
-              <div class="export-done-badge" aria-hidden="true">✓</div>
-              <h2>택소노미 초안이 준비되었습니다</h2>
-              <p class="lead">요약을 확인한 뒤 Excel 파일을 내려받으세요.</p>
-            </div>
-            <div class="export-stats" id="export-stats"></div>
-            <div class="export-file-card" id="export-file-card">
-              <div class="export-file-icon" aria-hidden="true">XLSX</div>
-              <div class="export-file-meta">
-                <strong>택소노미 Excel</strong>
-                <p>공통 · PC/MO 페이지 시트와 변수사전이 포함된 .xlsx 파일입니다.</p>
-              </div>
-              <div class="export-file-actions">
-                <button type="button" class="btn-primary" id="taxonomy-export-btn">Excel 다운로드</button>
-              </div>
-            </div>
-            <div class="export-preview-card">
-              <div class="export-card-head">Excel 미리보기</div>
-              <div class="export-card-body" id="export-preview">
-                <div class="export-preview-empty">확정 후 미리보기가 표시됩니다.</div>
-              </div>
-            </div>
-            <div class="export-footer-actions">
-              <button type="button" class="btn-secondary" id="new-wizard-btn">새 분석 시작</button>
-            </div>
-          </div>
-        </section>
       </main>
     </div>
 
@@ -494,9 +414,14 @@
     </form>
   </dialog>
 
+  <dialog id="taxonomy-image-dialog" class="taxonomy-image-dialog" aria-label="화면 이미지">
+    <button type="button" class="taxonomy-image-dialog-close" id="taxonomy-image-dialog-close" aria-label="닫기">×</button>
+    <img id="taxonomy-image-dialog-img" alt="화면 이미지" />
+  </dialog>
+
   <script>window.__WIZARD_MODE__ = true;</script>
-  <script src="/js/workspace-core.js?v=20260807b"></script>
-  <script src="/js/wizard-app.js?v=20260731f"></script>
-  <script src="/js/tutorial-tour.js?v=20260807a"></script>
+  <script src="/js/workspace-core.js?v=20260814e"></script>
+  <script src="/js/wizard-app.js?v=20260814c"></script>
+  <script src="/js/tutorial-tour.js?v=20260814c"></script>
 </body>
 </html>
