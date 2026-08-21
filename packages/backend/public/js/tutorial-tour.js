@@ -9,7 +9,7 @@
 
   const WIZARD_NAMES = {
     0: "1단계 · 프로젝트 선택",
-    1: "2단계 · 사이트 입력 & 분석",
+    1: "2단계 · 페이지 읽기",
     2: "3단계 · 택소노미 확인 및 수정",
   };
 
@@ -54,30 +54,30 @@
     /* ——— 0. 프로젝트 ——— */
     {
       step: 0,
-      target: "#panel-0 h2, #panel-0 .lead",
-      title: "1. 이 단계에서 하는 일",
-      body: "분석·태그는 프로젝트 단위로만 저장됩니다. 아래는 샘플 화면입니다. 「새 프로젝트」로 만들거나, 카드로 기존 프로젝트를 엽니다.",
+      target: "#panel-0 h2",
+      title: "1. 프로젝트",
+      body: "최근 연 것과 전체 목록에서 고릅니다. 사진은 이미 읽은 프로젝트에만 있습니다.",
       prepare: "project",
     },
     {
       step: 0,
       target: "#project-create-btn",
       title: "2. 새 프로젝트",
-      body: "「새 프로젝트」를 누르면 만들기 창만 열립니다. 이 시점에는 아직 목록에 생기지 않습니다.",
+      body: "이름, URL, MO를 넣고 만듭니다.",
       prepare: "project",
     },
     {
       step: 0,
-      target: "[data-tour-demo='settings-panel']",
-      title: "3. 저장해야 생성됨",
-      body: "이름·설명을 입력한 뒤 「저장하고 프로젝트 열기」를 눌렀을 때만 DB에 만들어집니다. 「취소」나 닫기를 누르면 프로젝트가 생기지 않습니다.",
+      target: "#project-create-dialog",
+      title: "3. 설정",
+      body: "이름·URL·MO만 넣습니다. 「만들기」를 눌러야 생깁니다.",
       prepare: "project-settings",
     },
     {
       step: 0,
       target: "[data-tour-demo='project-card']",
       title: "4. 목록에서 선택",
-      body: "저장된 프로젝트는 카드로 보입니다. 실제 사용 시에는 카드를 눌러 그 프로젝트로 들어갑니다. 사용방법에서는 샘플을 누르지 마세요.",
+      body: "칸을 누르면 그 프로젝트를 엽니다.",
       prepare: "project",
     },
 
@@ -114,7 +114,7 @@
       step: 1,
       target: "#url-summary",
       title: "5. 등록 요약",
-      body: "총 URL·PC/MO 건수가 요약됩니다. 같은 화면 아래 「분석 시작」을 누르면 자동으로 초안을 만듭니다.",
+      body: "총 URL·PC/MO 건수가 요약됩니다. 같은 화면 아래 「택소노미 초안 만들기」를 누르면 자동으로 초안을 만듭니다.",
       prepare: "site",
     },
 
@@ -129,8 +129,8 @@
     {
       step: 2,
       target: "#start-analyze-btn",
-      title: "2. 분석 시작",
-      body: "「분석 시작」을 누르면 미완료 카드부터 「태깅 → 이름붙이기 → 이미지 캡쳐」순으로 진행됩니다.",
+      title: "2. 택소노미 초안 만들기",
+      body: "「택소노미 초안 만들기」를 누르면 미완료 카드부터 「태깅 → 이름붙이기 → 이미지 캡쳐」순으로 진행됩니다.",
       prepare: "analyze-idle",
     },
     {
@@ -178,8 +178,8 @@
     {
       step: 2,
       target: "[data-tour-demo='job-reanalyze'], #retry-failed-btn",
-      title: "9. 실패 · 다시 시도 · 다시 분석",
-      body: "실패 카드는 「다시 시도」또는 「실패 항목만 다시 시도」입니다. 이미 완료된 카드는 「다시 분석」으로만 재실행됩니다.",
+      title: "9. 실패 · 다시 시도 · 다시 읽기",
+      body: "실패 카드는 「다시 시도」또는 「실패 항목만 다시 시도」입니다. 이미 완료된 카드는 「이 페이지 다시 읽기」로만 재실행됩니다.",
       prepare: "analyze-retry",
     },
 
@@ -497,51 +497,60 @@
     if (cards) cards.innerHTML = html;
   }
 
+  function demoTile(name, date, demoAttr) {
+    return (
+      '<article class="project-tile" data-tour-demo="' +
+      demoAttr +
+      '" role="presentation">' +
+      '<div class="project-tile-cover"></div>' +
+      '<div class="project-tile-name">' +
+      name +
+      "</div>" +
+      '<div class="project-tile-date">' +
+      date +
+      "</div></article>"
+    );
+  }
+
   function prepareProject() {
+    const browse = $("#project-browse");
+    const dialog = $("#project-create-dialog");
+    if (browse) browse.hidden = false;
+    if (dialog?.open) dialog.close();
     const list = $("#project-list");
+    const recent = $("#project-recent");
     const status = $("#project-list-status");
+    const recentWrap = $("#project-recent-wrap");
+    const allWrap = $("#project-all-wrap");
     if (status) {
       status.hidden = true;
       status.textContent = "";
     }
-    if (!list) return;
-    list.innerHTML =
-      '<article class="project-card" data-tour-demo="project-card" role="presentation">' +
-      '<div class="project-card-title">' +
-      DEMO_PROJECT +
-      "</div>" +
-      '<div class="project-card-meta">분석 대상 2개 · 완료 1개</div>' +
-      '<div class="project-card-updated">최근 저장 방금 전 (샘플)</div>' +
-      '<button type="button" class="project-card-options-btn" tabindex="-1">옵션 설정</button>' +
-      "</article>" +
-      '<article class="project-card" data-tour-demo="project-card-2" role="presentation">' +
-      '<div class="project-card-title">모바일 이벤트 점검</div>' +
-      '<div class="project-card-meta">분석 대상 1개 · 완료 0개</div>' +
-      '<div class="project-card-updated">최근 저장 어제 (샘플)</div>' +
-      '<button type="button" class="project-card-options-btn" tabindex="-1">옵션 설정</button>' +
-      "</article>";
+    const tiles =
+      demoTile(DEMO_PROJECT, "오늘", "project-card") +
+      demoTile("모바일 이벤트 점검", "어제", "project-card-2");
+    if (recent) recent.innerHTML = tiles;
+    if (list) list.innerHTML = tiles;
+    if (recentWrap) recentWrap.hidden = false;
+    if (allWrap) allWrap.hidden = false;
   }
 
   function prepareProjectSettings() {
-    prepareProject();
-    const panel = $("#panel-0");
-    if (!panel || panel.querySelector("[data-tour-demo='settings-panel']")) return;
-    const box = document.createElement("div");
-    box.setAttribute("data-tour-demo", "settings-panel");
-    box.className = "tour-sample-settings";
-    box.innerHTML =
-      '<div class="tour-sample-settings-kicker">NEW PROJECT · 샘플</div>' +
-      "<h3>새 프로젝트 만들기</h3>" +
-      "<p>「저장하고 프로젝트 열기」를 눌러야 생성됩니다. 취소하면 만들어지지 않습니다.</p>" +
-      '<label><span>프로젝트 이름</span><input type="text" value="' +
-      DEMO_PROJECT +
-      '" readonly /></label>' +
-      "<label><span>설명</span><textarea readonly rows=\"2\">ibank-ax.com GNB·배너 이벤트 초안</textarea></label>" +
-      '<div class="tour-sample-settings-actions">' +
-      '<button type="button" class="btn-secondary" tabindex="-1">취소</button>' +
-      '<button type="button" class="btn-primary" tabindex="-1">저장하고 프로젝트 열기</button>' +
-      "</div>";
-    panel.appendChild(box);
+    const dialog = $("#project-create-dialog");
+    const name = $("#create-project-name");
+    if (name) name.value = DEMO_PROJECT;
+    const urlRows = $("#create-url-rows");
+    if (urlRows) {
+      urlRows.innerHTML =
+        '<div class="project-create-url-row"><input type="url" value="' +
+        DEMO_URL +
+        '" readonly /></div>';
+    }
+    const pc = $("#create-project-pc");
+    const mo = $("#create-project-mo");
+    if (pc) pc.checked = true;
+    if (mo) mo.checked = true;
+    if (dialog && !dialog.open) dialog.showModal();
   }
 
   function prepareSite() {
@@ -731,12 +740,12 @@
         '<span class="job-card-url">ibank-ax.com/</span><span class="job-card-vp">MO</span>' +
         '<button type="button" class="btn-secondary job-retry" data-tour-demo="retry" tabindex="-1">다시 시도</button></div>' +
         '<div class="job-card-meta">실패 · 시간 초과 (샘플)</div></div>' +
-        '<div class="job-group-divider"><span>완료된 분석</span><small>다시 실행하려면 「다시 분석」</small></div>' +
+        '<div class="job-group-divider"><span>완료된 작업</span><small>다시 실행하려면 「이 페이지 다시 읽기」</small></div>' +
         '<div class="job-card done" data-tour-demo="job-done">' +
         '<div class="job-card-head">' +
         '<span class="job-card-index">2</span><span class="job-status-dot done"></span>' +
         '<span class="job-card-url">ibank-ax.com/</span><span class="job-card-vp">PC</span>' +
-        '<button type="button" class="btn-secondary job-reanalyze" data-tour-demo="job-reanalyze" tabindex="-1">다시 분석</button></div>' +
+        '<button type="button" class="btn-secondary job-reanalyze" data-tour-demo="job-reanalyze" tabindex="-1">이 페이지 다시 읽기</button></div>' +
         '<div class="job-card-meta">완료 · 후보 24개</div></div>'
     );
     snapShow($("#retry-failed-btn"));

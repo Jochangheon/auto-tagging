@@ -8,6 +8,7 @@ import { cleanupRegisteredSessions } from "../crawl/firecrawl-session-registry.j
 import {
   executeDevAnalyzeJob,
   executeViewportRetag,
+  executePreviewCapture,
   executeViewOnlyLiveView,
   startDevAnalyzeJob,
   stopOrchestratorSession,
@@ -670,6 +671,28 @@ devTestRouter.post("/view-only", async (req, res) => {
     return res.status(500).json({ ok: false, error: message, job_id });
   } finally {
     runningViewOnlyJobId = null;
+  }
+});
+
+/** POST /api/dev/preview-capture — screenshot a URL without tagging */
+devTestRouter.post("/preview-capture", async (req, res) => {
+  const url = typeof req.body?.url === "string" ? req.body.url.trim() : "";
+  if (!url) {
+    return res.status(400).json({ ok: false, error: "url required" });
+  }
+  const viewport = parseViewportMode(req.body?.viewport) ?? "pc";
+  try {
+    const result = await executePreviewCapture(url, viewport);
+    return res.status(200).json({
+      ok: true,
+      job_id: result.job_id,
+      capture_url: result.capture_url,
+      viewport,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("[dev-test] preview-capture failed:", message);
+    return res.status(500).json({ ok: false, error: message });
   }
 });
 

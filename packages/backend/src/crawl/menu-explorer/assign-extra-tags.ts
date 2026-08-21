@@ -41,7 +41,7 @@ for (const sel of panelSelectors) {
   }
 }
 for (const panel of panels) {
-  for (const el of panel.querySelectorAll("a, button, [role='menuitem'], p, span")) {
+  for (const el of panel.querySelectorAll("a, button, [role='menuitem']")) {
     if (nextId > 500) break;
     if (el.getAttribute("data-tag-id")) continue;
     if (!visible(el)) continue;

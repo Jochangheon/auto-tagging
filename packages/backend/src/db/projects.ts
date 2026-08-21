@@ -5,6 +5,7 @@ export type ProjectWizardState = {
   step?: number;
   urls?: unknown[];
   jobs?: unknown[];
+  cover_url?: string | null;
   savedAt?: string | null;
 };
 

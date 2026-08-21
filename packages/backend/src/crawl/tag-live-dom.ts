@@ -80,6 +80,18 @@ const viewportMode = ${JSON.stringify(viewport)};
 const sel = ${JSON.stringify(INTERACTIVE_SELECTOR)};
 const MAX_ELEMENTS = ${MAX_ELEMENTS};
 
+function isTinyDecorative(el) {
+  const r = el.getBoundingClientRect();
+  if (r.width >= 16 || r.height >= 16) return false;
+  const tag = el.tagName.toLowerCase();
+  if (tag === "button" || tag === "input" || tag === "select" || tag === "textarea") return false;
+  if (tag === "a") {
+    const href = el.getAttribute("href") || "";
+    if (href && href !== "#" && !href.toLowerCase().startsWith("javascript:")) return false;
+  }
+  return true;
+}
+
 function bboxFor(el) {
   const r = el.getBoundingClientRect();
   if (r.width <= 0 && r.height <= 0) return null;
@@ -291,6 +303,7 @@ const freshMatched = [];
 for (const el of allMatched) {
   if (shouldExcludeInteractiveWrapper(el)) continue;
   if (el.getAttribute("data-tag-id")) continue;
+  if (isTinyDecorative(el)) continue;
   const visibility = classifyVisibility(el);
   if (isCollectibleHidden(visibility)) continue;
   freshMatched.push(el);
@@ -307,7 +320,7 @@ for (const el of freshMatched) {
   pushTaggedEntry(el, tagId);
 }
 
-// Phase 3 — cursor:pointer blocks not covered by INTERACTIVE_SELECTOR.
+// Phase 3 — role/onclick blocks not covered by INTERACTIVE_SELECTOR.
 const freshPointer = pointerCandidates.filter((el) => !el.getAttribute("data-tag-id"));
 freshPointer.sort((a, b) => collectPriority(a) - collectPriority(b));
 
@@ -318,6 +331,7 @@ for (const el of freshPointer) {
   }
   const visibility = classifyVisibility(el);
   if (isCollectibleHidden(visibility)) continue;
+  if (isTinyDecorative(el)) continue;
   const tagId = nextId++;
   el.setAttribute("data-tag-id", String(tagId));
   cursor_pointer_added++;

@@ -129,7 +129,7 @@ function fileKeyForRow(row: TaxonomyUniqueEventRow): string {
     row.action_display || row.action || "",
     String(row.member_count || 0),
   ].join("_");
-  return raw.replace(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 72) || "action";
+  return (raw.replace(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 68) || "action") + "_sq";
 }
 
 async function mapPool<T>(

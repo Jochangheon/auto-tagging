@@ -6,16 +6,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>택소노미 초안 만들기</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
-  <link rel="stylesheet" href="/css/workspace.css?v=20260814d" />
-  <link rel="stylesheet" href="/css/wizard.css?v=20260814a" />
-  <link rel="stylesheet" href="/css/tutorial-tour.css?v=20260724d" />
+  <link rel="stylesheet" href="/css/workspace.css?v=20260821d" />
+  <link rel="stylesheet" href="/css/wizard.css?v=20260821d" />
+  <link rel="stylesheet" href="/css/tutorial-tour.css?v=20260821d" />
 </head>
 <body>
   <div class="wizard-app">
     <header class="wizard-header">
       <div>
-        <div class="wizard-header-brand">Analytics <span>SaaS</span></div>
-        <div class="wizard-header-subtitle">택소노미 초안 만들기 <span class="version-badge" id="app-version">v3.5.0</span></div>
+        <div class="wizard-header-brand">자동태깅</div>
+        <div class="wizard-header-subtitle" hidden><span class="version-badge" id="app-version">v3.6</span></div>
       </div>
       <div class="wizard-header-meta">
         <span id="autosave-status">DB 저장 대기</span>
@@ -30,8 +30,8 @@
 
     <div class="wizard-step-bar" id="wizard-step-bar">
       <nav class="wizard-step-nav" id="wizard-step-nav" aria-label="진행 단계"></nav>
-      <button type="button" class="wizard-tutorial-link" id="wizard-tutorial-btn" data-open-tutorial title="현재 단계 사용방법">
-        사용방법
+      <button type="button" class="wizard-tutorial-link" id="wizard-tutorial-btn" data-open-tutorial title="처음 쓸 때 보는 안내">
+        안내
       </button>
     </div>
 
@@ -44,8 +44,8 @@
     <div class="project-context-bar" id="project-context-bar" hidden>
       <span class="project-context-label">현재 프로젝트</span>
       <strong id="project-context-name"></strong>
-      <span class="project-context-link">이후 모든 입력·분석·태그가 이 프로젝트에 저장됩니다.</span>
-      <button type="button" class="btn-secondary" id="project-settings-btn">프로젝트 옵션</button>
+      <span class="project-context-link">이 프로젝트에 저장됩니다.</span>
+      <button type="button" class="btn-secondary" id="project-settings-btn">설정</button>
     </div>
 
     <div class="wizard-body">
@@ -53,42 +53,41 @@
         <!-- 0. 프로젝트 선택 -->
         <section class="wizard-panel active project-select-panel" id="panel-0" data-step="0">
           <div class="project-select-head">
-            <div>
-              <h2>프로젝트 선택</h2>
-              <p class="lead">선택한 프로젝트에 속한 분석만 불러옵니다. 다른 프로젝트의 데이터는 섞이지 않습니다.</p>
+            <h2>프로젝트</h2>
+            <button type="button" class="btn-primary" id="project-create-btn">새 프로젝트</button>
+          </div>
+
+          <div id="project-browse">
+            <div id="project-list-status" class="project-list-status">불러오는 중…</div>
+            <div class="project-section" id="project-recent-wrap" hidden>
+              <h3 class="project-section-label">최근</h3>
+              <div id="project-recent" class="project-tile-row"></div>
             </div>
-            <div class="project-create-row">
-              <button type="button" class="btn-primary" id="project-create-btn">새 프로젝트</button>
+            <div class="project-section" id="project-all-wrap" hidden>
+              <h3 class="project-section-label">전체</h3>
+              <div id="project-list" class="project-tile-grid"></div>
             </div>
           </div>
-          <div id="project-list-status" class="project-list-status">DB에서 프로젝트를 불러오는 중…</div>
-          <div id="project-list" class="project-list"></div>
+
         </section>
 
         <!-- 1. 사이트 입력 + 분석 실행 -->
         <section class="wizard-panel" id="panel-1" data-step="1">
-          <h2>사이트 입력 &amp; 분석 실행</h2>
-          <p class="lead">사이트와 분석할 페이지만 정하면 자동으로 택소노미 초안을 만듭니다.</p>
-          <div class="wizard-tip">URL을 확정하면 같은 목록에서 분석까지 진행됩니다. 「분석 시작」을 누르면 각 행에 진행 상태가 표시되고, 끝나면 택소노미 초안으로 자동 이동합니다.</div>
+          <h2>페이지 읽기</h2>
+          <div id="site-preview" class="site-preview" hidden>
+            <img id="site-preview-img" alt="" />
+          </div>
 
           <div class="step1-cards">
           <div class="step1-url-col">
             <div class="site-discover-card" id="site-discover-card">
-              <div class="url-list-head">
-                <span>페이지 URL 불러오기</span>
-              </div>
               <div class="site-discover-body">
-                <label class="site-discover-field">
-                  <span>사이트 주소 (도메인만 입력 가능)</span>
-                  <input type="text" id="seed-url-input" class="seed-url-input" placeholder="example.com 또는 https://example.com" autocomplete="url" inputmode="url" spellcheck="false" />
-                </label>
-                <div class="site-discover-actions">
-                  <button type="button" class="btn-primary" id="discover-urls-btn">페이지 불러오기</button>
+                <label class="site-discover-field" for="seed-url-input">사이트 주소</label>
+                <div class="step1-composer-row">
+                  <input type="text" id="seed-url-input" class="seed-url-input" placeholder="example.com" autocomplete="url" inputmode="url" spellcheck="false" />
+                  <button type="button" class="btn-primary" id="discover-urls-btn">페이지 찾기</button>
                   <button type="button" class="btn-secondary" id="discover-stop-btn" hidden>중단</button>
                 </div>
-                <p class="site-discover-hint caption">
-                  주소를 넣으면 사이트맵과 페이지를 알아서 찾아 목록에 넣습니다.
-                </p>
                 <p class="site-discover-status caption" id="discover-status" hidden></p>
               </div>
             </div>
@@ -111,19 +110,22 @@
 
             <div class="url-list-card compact url-target-card">
               <div class="url-list-head">
-                <span class="analyze-page-list-title">분석 대상 URL &amp; 진행 상태</span>
-                <div class="url-list-head-right">
-                  <span id="analyze-batch-status" class="caption"></span>
-                  <button type="button" class="btn-secondary btn-compact" id="paste-urls-btn">직접 붙여넣기</button>
-                </div>
+                <span class="analyze-page-list-title">읽을 페이지</span>
+                <span id="analyze-batch-status" class="caption"></span>
               </div>
               <div class="url-rows" id="url-rows"></div>
               <div class="url-list-foot url-list-foot-split">
-                <button type="button" class="btn-secondary" id="add-url-btn">+ URL 직접 추가</button>
+                <details class="step1-more-add">
+                  <summary>주소 직접 넣기</summary>
+                  <div class="step1-more-add-actions">
+                    <button type="button" class="btn-secondary" id="paste-urls-btn">여러 줄 붙여넣기</button>
+                    <button type="button" class="btn-secondary" id="add-url-btn">한 줄 추가</button>
+                  </div>
+                </details>
                 <div class="analyze-toolbar">
                   <button type="button" class="btn-secondary" id="retry-failed-btn" hidden>실패 항목만 다시 시도</button>
                   <button type="button" class="btn-secondary" id="stop-analyze-btn" hidden>중단</button>
-                  <button type="button" class="btn-primary" id="start-analyze-btn">분석 시작</button>
+                  <button type="button" class="btn-primary" id="start-analyze-btn">택소노미 초안 만들기</button>
                 </div>
               </div>
             </div>
@@ -227,7 +229,7 @@
               <div class="card-head">
                 <h2>미리보기</h2>
                 <div class="preview-tools">
-                  <button type="button" id="preview-show-all-btn" class="btn-secondary btn-compact" disabled aria-pressed="false">모든 위치 표시</button>
+                  <button type="button" id="preview-show-all-btn" class="btn-secondary btn-compact" hidden disabled aria-pressed="false">모든 위치 표시</button>
                 </div>
               </div>
               <div id="position-validation-panel" class="position-validation-panel" hidden></div>
@@ -255,12 +257,11 @@
         <section class="wizard-panel view-taxonomy-panel" id="panel-4" data-step="2">
           <div class="taxonomy-result-head">
             <div>
-              <span class="combined-section-kicker">자동 생성 완료</span>
               <h2>택소노미 확인 · 수정</h2>
-              <p>영역 이미지를 보면서 카테고리·액션·라벨을 바로 수정할 수 있습니다.</p>
+              <p>이미지를 보고 카테고리·액션·라벨만 고치면 됩니다.</p>
             </div>
             <div class="taxonomy-result-actions">
-              <button type="button" class="btn-secondary" id="new-wizard-btn">다른 프로젝트 선택</button>
+              <button type="button" class="btn-secondary" id="new-wizard-btn">다른 프로젝트</button>
               <button type="button" class="btn-primary" id="taxonomy-export-btn">Excel 다운로드</button>
             </div>
           </div>
@@ -274,10 +275,10 @@
             <div class="taxonomy-toolbar">
               <input type="search" id="taxonomy-search" placeholder="이벤트명 · 라벨 검색…" />
             </div>
-            <div id="taxonomy-bulk-bar" class="taxonomy-bulk-bar">
+            <div id="taxonomy-bulk-bar" class="taxonomy-bulk-bar" hidden>
               <div class="taxonomy-bulk-left">
-                <strong id="taxonomy-bulk-count">한번에 수정하기</strong>
-                <span class="taxonomy-bulk-hint">체크한 행에 적용합니다. 없으면 현재 목록 전체에 적용합니다.</span>
+                <strong id="taxonomy-bulk-count">선택한 행 수정</strong>
+                <span class="taxonomy-bulk-hint">체크한 행에만 적용합니다. 적용 후 「변경 저장」을 누르세요.</span>
               </div>
               <div class="taxonomy-bulk-fields">
                 <label>카테고리<input type="text" id="taxonomy-bulk-category" placeholder="바꿀 카테고리" /></label>
@@ -285,7 +286,7 @@
                 <label>라벨<input type="text" id="taxonomy-bulk-label" placeholder="바꿀 라벨" /></label>
               </div>
               <div class="taxonomy-bulk-actions">
-                <button type="button" class="btn-primary" id="taxonomy-bulk-apply">한번에 수정하기</button>
+                <button type="button" class="btn-primary" id="taxonomy-bulk-apply">선택한 행에 적용</button>
               </div>
             </div>
             <div id="taxonomy-save-bar" class="taxonomy-save-bar" hidden>
@@ -372,16 +373,43 @@
     </div>
   </aside>
 
-  <dialog id="paste-dialog">
-    <form method="dialog" style="padding:16px;min-width:360px">
-      <h3 style="margin:0 0 8px">URL 여러 줄 붙여넣기</h3>
-      <p style="margin:0 0 8px;font-size:13px;color:var(--text-secondary)">한 줄에 URL 하나씩 입력하세요.</p>
-      <textarea id="paste-textarea" rows="8" style="width:100%;font:inherit;padding:8px"></textarea>
-      <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end">
+  <dialog id="paste-dialog" class="paste-dialog">
+    <form method="dialog" class="paste-dialog-form">
+      <h3>주소 여러 줄 붙여넣기</h3>
+      <p>한 줄에 주소 하나씩 넣으세요.</p>
+      <textarea id="paste-textarea" rows="8"></textarea>
+      <div class="paste-dialog-actions">
         <button type="button" class="btn-secondary" id="paste-cancel">취소</button>
         <button type="submit" class="btn-primary">추가</button>
       </div>
     </form>
+  </dialog>
+
+  <dialog id="project-create-dialog" class="project-create-dialog">
+    <label class="project-create-field">
+      <span>이름</span>
+      <input type="text" id="create-project-name" maxlength="120" autocomplete="off" />
+    </label>
+    <div class="project-create-field">
+      <span>URL</span>
+      <div id="create-url-rows" class="project-create-urls"></div>
+      <button type="button" class="project-create-add" id="create-url-add">줄 추가</button>
+    </div>
+    <div class="project-create-viewports">
+      <label class="project-create-vp">
+        <input type="checkbox" id="create-project-pc" checked />
+        <span>PC</span>
+      </label>
+      <label class="project-create-vp">
+        <input type="checkbox" id="create-project-mo" />
+        <span>MO</span>
+      </label>
+    </div>
+    <div class="project-create-actions">
+      <span id="create-project-message"></span>
+      <button type="button" class="btn-secondary" id="create-project-cancel">취소</button>
+      <button type="button" class="btn-primary" id="create-project-submit">만들기</button>
+    </div>
   </dialog>
 
   <dialog id="project-settings-dialog" class="project-settings-dialog">
@@ -416,12 +444,14 @@
 
   <dialog id="taxonomy-image-dialog" class="taxonomy-image-dialog" aria-label="화면 이미지">
     <button type="button" class="taxonomy-image-dialog-close" id="taxonomy-image-dialog-close" aria-label="닫기">×</button>
-    <img id="taxonomy-image-dialog-img" alt="화면 이미지" />
+    <div class="taxonomy-image-dialog-stage" id="taxonomy-image-dialog-stage">
+      <img id="taxonomy-image-dialog-img" alt="화면 이미지" />
+    </div>
   </dialog>
 
   <script>window.__WIZARD_MODE__ = true;</script>
-  <script src="/js/workspace-core.js?v=20260814e"></script>
-  <script src="/js/wizard-app.js?v=20260814c"></script>
-  <script src="/js/tutorial-tour.js?v=20260814c"></script>
+  <script src="/js/workspace-core.js?v=20260821d"></script>
+  <script src="/js/wizard-app.js?v=20260821d"></script>
+  <script src="/js/tutorial-tour.js?v=20260821d"></script>
 </body>
 </html>

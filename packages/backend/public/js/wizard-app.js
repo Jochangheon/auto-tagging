@@ -4,7 +4,7 @@
 (function () {
   const STEPS = [
     { id: 0, label: "프로젝트 선택" },
-    { id: 1, label: "사이트 입력 & 분석" },
+    { id: 1, label: "페이지 읽기" },
     { id: 2, label: "택소노미 확인 및 수정" },
   ];
 
@@ -17,6 +17,8 @@
   let settingsContinueAfterSave = false;
   /** "create" = dialog only until save; "edit" = existing project settings */
   let settingsMode = "edit";
+  /** URL rows on the new-project sheet (not persisted until 만들기). */
+  let createUrlDrafts = [""];
   let analyzeAbort = false;
   let analyzeRunning = false;
   /** @type {Set<string>|null} Keys of jobs in the current analyze/reanalyze run. */
@@ -132,6 +134,8 @@
       projectId: null,
       projectName: "",
       projectDescription: "",
+      defaultViewports: ["pc"],
+      cover_url: null,
       sessionId: null,
       urls: [],
       jobs: [],
@@ -170,7 +174,9 @@
   }
 
   function defaultProjectViewports() {
-    return ["pc"];
+    const vps = Array.isArray(state.defaultViewports) ? state.defaultViewports : [];
+    const next = vps.filter((v) => v === "pc" || v === "mo");
+    return next.length ? next : ["pc"];
   }
 
   function jobKey(job) {
@@ -187,6 +193,7 @@
       flow_version: 3,
       urls: state.urls,
       jobs: state.jobs,
+      cover_url: state.cover_url || null,
       column_labels: state.columnLabels || null,
       savedAt: state.savedAt,
     };
@@ -217,54 +224,47 @@
     if (!value) return "";
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return "";
-    return date.toLocaleString("ko-KR", {
-      month: "numeric",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+    const diff = Date.now() - date.getTime();
+    const day = 24 * 60 * 60 * 1000;
+    if (diff >= 0 && diff < day) return "오늘";
+    if (diff >= 0 && diff < 2 * day) return "어제";
+    if (diff >= 0 && diff < 7 * day) return Math.floor(diff / day) + "일 전";
+    return date.toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" });
   }
 
-  function renderProjects() {
-    const list = $("project-list");
-    const status = $("project-list-status");
-    if (!list || !status) return;
-    if (projectLoading) {
-      status.hidden = false;
-      status.textContent = "DB에서 프로젝트를 불러오는 중…";
-      list.innerHTML = "";
-      return;
-    }
-    if (projectOpening) {
-      status.hidden = false;
-      status.textContent = "선택한 프로젝트를 여는 중…";
-    }
-    if (!projects.length) {
-      status.hidden = false;
-      status.textContent = "아직 프로젝트가 없습니다. 「새 프로젝트」로 첫 프로젝트를 만드세요.";
-      list.innerHTML = "";
-      return;
-    }
-    status.hidden = true;
-    list.innerHTML = projects
-      .map((project) => {
-        const active = project.id === state.projectId;
-        return (
-          '<article class="project-card' + (active ? " active" : "") +
-          '" role="button" tabindex="0" data-project-id="' + escapeAttr(project.id) + '">' +
-          '<button type="button" class="project-delete-btn" data-project-delete="' +
-          escapeAttr(project.id) + '" aria-label="프로젝트 삭제">×</button>' +
-          '<div class="project-card-title">' + escapeHtml(project.name) + "</div>" +
-          '<div class="project-card-meta">분석 대상 ' + Number(project.page_count || 0) +
-          "개 · 완료 " + Number(project.analyzed_count || 0) + "개</div>" +
-          '<div class="project-card-updated">최근 저장 ' +
-          escapeHtml(formatProjectDate(project.updated_at)) + "</div>" +
-          '<button type="button" class="project-card-options-btn" data-project-options="' +
-          escapeAttr(project.id) + '">옵션 설정</button></article>'
-        );
-      })
-      .join("");
-    list.querySelectorAll(".project-card").forEach((card) => {
+  function projectRecency(project) {
+    const raw = project.last_opened_at || project.updated_at || "";
+    const time = new Date(raw).getTime();
+    return Number.isNaN(time) ? 0 : time;
+  }
+
+  function projectCoverUrl(project) {
+    return project && typeof project.cover_url === "string" ? project.cover_url : "";
+  }
+
+  function projectTileHtml(project) {
+    const active = project.id === state.projectId;
+    const cover = projectCoverUrl(project);
+    const coverInner = cover
+      ? '<img alt="" src="' + escapeAttr(cover) + '" />'
+      : "";
+    return (
+      '<article class="project-tile' + (active ? " active" : "") +
+      '" role="button" tabindex="0" data-project-id="' +
+      escapeAttr(project.id) + '">' +
+      '<button type="button" class="project-tile-delete" data-project-delete="' +
+      escapeAttr(project.id) + '" aria-label="삭제">×</button>' +
+      '<div class="project-tile-cover">' + coverInner + "</div>" +
+      '<div class="project-tile-name">' + escapeHtml(project.name) + "</div>" +
+      '<div class="project-tile-date">' +
+      escapeHtml(formatProjectDate(project.last_opened_at || project.updated_at)) +
+      "</div></article>"
+    );
+  }
+
+  function bindProjectTiles(root) {
+    if (!root) return;
+    root.querySelectorAll(".project-tile").forEach((card) => {
       const open = () => void openProject(card.dataset.projectId);
       card.addEventListener("click", (event) => {
         if (event.target.closest("button")) return;
@@ -277,18 +277,150 @@
         }
       });
     });
-    list.querySelectorAll(".project-delete-btn").forEach((button) => {
+    root.querySelectorAll(".project-tile-delete").forEach((button) => {
       button.addEventListener("click", (event) => {
         event.stopPropagation();
         void removeProject(button.dataset.projectDelete);
       });
     });
-    list.querySelectorAll(".project-card-options-btn").forEach((button) => {
-      button.addEventListener("click", (event) => {
-        event.stopPropagation();
-        void openProject(button.dataset.projectOptions, { showSettings: true });
+    root.querySelectorAll(".project-tile-cover img").forEach((img) => {
+      img.addEventListener("error", () => img.remove());
+    });
+  }
+
+  function renderProjects() {
+    const list = $("project-list");
+    const recent = $("project-recent");
+    const status = $("project-list-status");
+    const recentWrap = $("project-recent-wrap");
+    const allWrap = $("project-all-wrap");
+    if (!list || !status) return;
+    if (projectLoading) {
+      status.hidden = false;
+      status.textContent = "불러오는 중…";
+      if (list) list.innerHTML = "";
+      if (recent) recent.innerHTML = "";
+      if (recentWrap) recentWrap.hidden = true;
+      if (allWrap) allWrap.hidden = true;
+      return;
+    }
+    if (projectOpening) {
+      status.hidden = false;
+      status.textContent = "여는 중…";
+    } else {
+      status.hidden = true;
+    }
+    if (!projects.length) {
+      if (recent) recent.innerHTML = "";
+      list.innerHTML = "";
+      if (recentWrap) recentWrap.hidden = true;
+      if (allWrap) allWrap.hidden = true;
+      return;
+    }
+    const sorted = projects.slice().sort((a, b) => projectRecency(b) - projectRecency(a));
+    const recentItems = sorted.slice(0, 3);
+    if (recent && recentWrap) {
+      recent.innerHTML = recentItems.map(projectTileHtml).join("");
+      recentWrap.hidden = false;
+      bindProjectTiles(recent);
+    }
+    list.innerHTML = sorted.map(projectTileHtml).join("");
+    if (allWrap) allWrap.hidden = false;
+    bindProjectTiles(list);
+  }
+
+  function closeCreateProjectDialog() {
+    const dialog = $("project-create-dialog");
+    if (dialog?.open) dialog.close();
+  }
+
+  function showProjectBrowse() {
+    closeCreateProjectDialog();
+    const browse = $("project-browse");
+    if (browse) browse.hidden = false;
+  }
+
+  function renderCreateUrlRows() {
+    const wrap = $("create-url-rows");
+    if (!wrap) return;
+    if (!createUrlDrafts.length) createUrlDrafts = [""];
+    wrap.innerHTML = createUrlDrafts
+      .map((url, idx) => {
+        return (
+          '<div class="project-create-url-row">' +
+          '<input type="url" data-create-url="' + idx +
+          '" value="' + escapeAttr(url) + '" spellcheck="false" inputmode="url" autocomplete="url" />' +
+          (createUrlDrafts.length > 1
+            ? '<button type="button" class="project-create-url-remove" data-create-url-remove="' +
+              idx + '" aria-label="삭제">×</button>'
+            : "") +
+          "</div>"
+        );
+      })
+      .join("");
+    wrap.querySelectorAll("[data-create-url]").forEach((input) => {
+      input.addEventListener("input", () => {
+        const i = Number(input.dataset.createUrl);
+        createUrlDrafts[i] = input.value;
       });
     });
+    wrap.querySelectorAll("[data-create-url-remove]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const i = Number(button.dataset.createUrlRemove);
+        createUrlDrafts.splice(i, 1);
+        renderCreateUrlRows();
+      });
+    });
+  }
+
+  function showCreateProjectSheet() {
+    createUrlDrafts = [""];
+    const dialog = $("project-create-dialog");
+    if ($("create-project-name")) $("create-project-name").value = "";
+    if ($("create-project-pc")) $("create-project-pc").checked = true;
+    if ($("create-project-mo")) $("create-project-mo").checked = false;
+    if ($("create-project-message")) $("create-project-message").textContent = "";
+    renderCreateUrlRows();
+    if (dialog && !dialog.open) dialog.showModal();
+    $("create-project-name")?.focus();
+  }
+
+  function collectCreateViewports() {
+    const next = [];
+    if ($("create-project-pc")?.checked) next.push("pc");
+    if ($("create-project-mo")?.checked) next.push("mo");
+    return next;
+  }
+
+  function renderSitePreview() {
+    const wrap = $("site-preview");
+    const img = $("site-preview-img");
+    if (!wrap || !img) return;
+    const url = typeof state.cover_url === "string" ? state.cover_url : "";
+    if (!url) {
+      wrap.hidden = true;
+      img.removeAttribute("src");
+      return;
+    }
+    img.onload = () => {
+      wrap.hidden = false;
+    };
+    img.onerror = () => {
+      wrap.hidden = true;
+      img.removeAttribute("src");
+    };
+    img.src = url;
+    wrap.hidden = false;
+  }
+
+  function collectCreateUrls() {
+    return createUrlDrafts
+      .map((line) => String(line || "").trim())
+      .filter(Boolean)
+      .map((line) => {
+        const withProto = /^https?:\/\//i.test(line) ? line : "https://" + line;
+        return isValidUrl(withProto) ? normalizeUrl(withProto) : line;
+      });
   }
 
   async function loadProjects() {
@@ -311,25 +443,7 @@
   }
 
   function createProjectFromInput() {
-    // Do NOT create in DB until the user presses save in the dialog.
-    showCreateProjectDialog();
-  }
-
-  function showCreateProjectDialog() {
-    settingsMode = "create";
-    settingsContinueAfterSave = true;
-    const dialog = $("project-settings-dialog");
-    if (!dialog) return;
-    const title = dialog.querySelector("h2");
-    const lead = dialog.querySelector(".project-settings-head p");
-    if (title) title.textContent = "새 프로젝트 만들기";
-    if (lead) lead.textContent = "이름·설명을 입력한 뒤 「저장하고 프로젝트 열기」를 눌러야 생성됩니다. 취소하면 만들어지지 않습니다.";
-    $("project-settings-name").value = "";
-    $("project-settings-description").value = "";
-    $("project-settings-message").textContent = "";
-    $("project-settings-save").textContent = "저장하고 프로젝트 열기";
-    if (!dialog.open) dialog.showModal();
-    $("project-settings-name")?.focus();
+    showCreateProjectSheet();
   }
 
   async function openProject(projectId, opts = {}) {
@@ -350,6 +464,9 @@
       const jobs = Array.isArray(stored.jobs)
         ? stored.jobs.filter((j) => !(j && j.kind === "figma"))
         : [];
+      const openedViewports = Array.isArray(data.project?.options?.default_viewports)
+        ? data.project.options.default_viewports.filter((v) => v === "pc" || v === "mo")
+        : ["pc"];
       state = {
         ...defaultState(),
         ...storedRest,
@@ -358,6 +475,8 @@
         projectId: data.project.id,
         projectName: data.project.name,
         projectDescription: data.project.description || "",
+        defaultViewports: openedViewports.length ? openedViewports : ["pc"],
+        cover_url: stored.cover_url || data.project?.cover_url || null,
         sessionId: data.session_id || null,
         urls,
         jobs,
@@ -376,10 +495,12 @@
       renderAll();
       resetDiscoverForProject();
       renderProjectContext();
+      showProjectBrowse();
       if (opts.showSettings) {
         showProjectSettings();
         return;
       }
+      if (opts.stayOnCreate) return;
       const resume = Math.max(1, Math.min(2, Number(state.resumeStep) || 1));
       goToStep(resume, { force: true });
     } catch (err) {
@@ -411,6 +532,94 @@
     } catch (err) {
       alert("프로젝트를 삭제하지 못했습니다.");
       console.error("project delete failed:", err);
+    }
+  }
+
+  async function submitCreateProject() {
+    const name = ($("create-project-name")?.value || "").trim();
+    const message = $("create-project-message");
+    const rawUrls = collectCreateUrls();
+    const invalid = rawUrls.filter((url) => !isValidUrl(url));
+    const viewports = collectCreateViewports();
+    if (!name) {
+      if (message) message.textContent = "이름을 입력하세요.";
+      $("create-project-name")?.focus();
+      return;
+    }
+    if (invalid.length) {
+      if (message) message.textContent = "URL을 확인하세요.";
+      return;
+    }
+    if (!rawUrls.length) {
+      if (message) message.textContent = "URL을 입력하세요.";
+      return;
+    }
+    if (!viewports.length) {
+      if (message) message.textContent = "PC 또는 MO를 선택하세요.";
+      return;
+    }
+    const button = $("create-project-submit");
+    if (button) button.disabled = true;
+    if (message) message.textContent = "";
+    if (button) button.textContent = "화면 불러오는 중…";
+    try {
+      const createRes = await fetch("/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      const createData = await createRes.json();
+      if (!createRes.ok || !createData.ok) {
+        throw new Error(createData.error || "project_create_failed");
+      }
+      const projectId = createData.project.id;
+      const patchRes = await fetch(
+        "/api/projects/" + encodeURIComponent(projectId) + "/settings",
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name,
+            options: { default_viewports: viewports, cache_mode: "reuse" },
+          }),
+        }
+      );
+      const patchData = await patchRes.json();
+      if (!patchRes.ok || !patchData.ok) {
+        throw new Error(patchData.error || "project_settings_failed");
+      }
+      await loadProjects();
+      await openProject(projectId, { stayOnCreate: true });
+      state.defaultViewports = viewports;
+      state.urls = rawUrls.map((url) => ({ url, alias: "", viewports: viewports.slice() }));
+      const previewVp = viewports.includes("pc") ? "pc" : "mo";
+      try {
+        const previewRes = await fetch("/api/dev/preview-capture", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: rawUrls[0], viewport: previewVp }),
+        });
+        const previewData = await previewRes.json().catch(() => ({}));
+        if (previewData.ok && previewData.capture_url) {
+          state.cover_url = previewData.capture_url;
+        }
+      } catch (previewErr) {
+        console.warn("preview capture failed:", previewErr);
+      }
+      renderUrlRows();
+      renderSitePreview();
+      await saveState();
+      await loadProjects();
+      closeCreateProjectDialog();
+      goToStep(1, { force: true });
+    } catch (err) {
+      if (message) message.textContent = "만들지 못했습니다.";
+      console.error("project create failed:", err);
+    } finally {
+      if (button) {
+        button.disabled = false;
+        button.textContent = "만들기";
+      }
     }
   }
 
@@ -464,7 +673,7 @@
     button.disabled = true;
     message.textContent = settingsMode === "create" ? "프로젝트 생성 중…" : "DB에 저장 중…";
     try {
-      const options = { default_viewports: ["pc"], cache_mode: "reuse" };
+      const options = { default_viewports: defaultProjectViewports(), cache_mode: "reuse" };
 
       if (settingsMode === "create") {
         const createRes = await fetch("/api/projects", {
@@ -675,6 +884,8 @@
       if (!state.jobs.length) initJobsFromUrls();
       renderJobCards();
       renderAnalyzeLead();
+      renderSitePreview();
+      updateStep1Hierarchy();
     }
     if (step === 0) {
       renderProjects();
@@ -713,7 +924,7 @@
     } else {
       btn.textContent = state.jobs.some((j) => j.status === "done")
         ? "택소노미 초안 만들기"
-        : "분석 시작";
+        : "택소노미 초안 만들기";
     }
     if (state.step === 1) {
       btn.disabled = analyzeRunning || !canProceedFrom(1);
@@ -796,7 +1007,7 @@
     const existing = validUrlEntries().length;
     setDiscoverStatus(
       existing
-        ? "이 프로젝트에 확정된 URL " + existing + "개가 있습니다. 더 찾으려면 「페이지 불러오기」를 누르세요."
+        ? "이 프로젝트에 페이지 " + existing + "개가 있습니다. 더 찾으려면 「페이지 찾기」를 누르세요."
         : "",
       false
     );
@@ -992,6 +1203,7 @@
     const stopBtn = $("discover-stop-btn");
     if (btn) btn.disabled = running;
     if (stopBtn) stopBtn.hidden = !running;
+    if (!running) updateStep1Hierarchy();
   }
 
   async function runDiscoverUrls() {
@@ -1210,7 +1422,7 @@
         mapped.length +
         "개" +
         (keptOther.length ? " (+다른 사이트 " + keptOther.length + "개 유지)" : "") +
-        ". 아래 「분석 시작」을 누르면 택소노미 초안을 자동으로 만듭니다.",
+        ". 아래 「택소노미 초안 만들기」를 누르면 자동으로 만듭니다.",
       false
     );
   }
@@ -1222,9 +1434,10 @@
 
     if (!state.urls.length) {
       container.innerHTML =
-        '<div class="url-rows-empty">아직 확정된 URL이 없습니다. 위에서 페이지를 불러와 선택하거나, 아래에 직접 추가하세요.</div>';
+        '<div class="url-rows-empty">아직 고른 페이지가 없습니다. 위에서 주소를 넣고 「페이지 찾기」를 누르세요.</div>';
       renderUrlSummary();
       refreshWizardSteps();
+      updateStep1Hierarchy();
       return;
     }
 
@@ -1305,6 +1518,17 @@
     updateUrlRowStatuses();
     renderUrlSummary();
     refreshWizardSteps();
+    updateStep1Hierarchy();
+  }
+
+  function updateStep1Hierarchy() {
+    const col = document.querySelector(".step1-url-col");
+    const discoverBtn = $("discover-urls-btn");
+    const hasUrls = validUrlEntries().length > 0;
+    if (col) col.classList.toggle("has-urls", hasUrls);
+    if (!discoverBtn || discoverRunning) return;
+    discoverBtn.classList.toggle("btn-primary", !hasUrls);
+    discoverBtn.classList.toggle("btn-secondary", hasUrls);
   }
 
   /* ── 분석 상태를 URL 행에 직접 표시 (대상 목록 = 실행 목록) ── */
@@ -1342,7 +1566,7 @@
 
   function urlRowStatusHtml(jobs) {
     if (!jobs.length) {
-      return '<span class="url-row-hint">분석 대기 — PC·MO를 고르고 「분석 시작」을 누르세요.</span>';
+      return '<span class="url-row-hint">대기 — PC·MO를 고르고 「택소노미 초안 만들기」를 누르세요.</span>';
     }
     let html = "";
     for (const job of jobs) {
@@ -1401,12 +1625,12 @@
       html +=
         '<button type="button" class="btn-primary btn-compact url-job-run" data-job-keys="' +
         escapeAttr(runnable.map(jobKey).join("|")) +
-        '" title="이 URL만 지금 분석합니다">분석 실행</button>';
+        '" title="이 URL만 지금 읽습니다">이 페이지 읽기</button>';
     } else if (jobs.every((j) => j.status === "done") && !jobs.some((j) => isJobInWaitQueue(jobKey(j)))) {
       html +=
         '<button type="button" class="btn-secondary btn-compact url-job-retry" data-job-keys="' +
         escapeAttr(jobs.map(jobKey).join("|")) +
-        '">다시 분석</button>';
+        '">이 페이지 다시 읽기</button>';
     }
     return html;
   }
@@ -1861,8 +2085,8 @@
     const list = $("analyze-guide-list");
     if (!list) return;
     list.innerHTML =
-      "<li>진행 상태는 각 URL 행에 바로 표시됩니다. 한 건만 돌리려면 그 행의 <strong>분석 실행</strong>을 누르세요.</li>" +
-      "<li>완료된 행은 <strong>다시 분석</strong>을 눌렀을 때만 새로 실행합니다.</li>" +
+      "<li>진행 상태는 각 URL 행에 바로 표시됩니다. 한 건만 돌리려면 그 행의 <strong>이 페이지 읽기</strong>를 누르세요.</li>" +
+      "<li>완료된 행은 <strong>이 페이지 다시 읽기</strong>를 눌렀을 때만 새로 실행합니다.</li>" +
       "<li><strong>태깅 → 이름붙이기 → 이미지 캡쳐 → 택소노미 생성</strong> 순으로 자동 진행됩니다.</li>" +
       "<li>로그인이 필요하면 해당 행에 <strong>로그인하기</strong> 버튼이 나타납니다. (/mypage 등)</li>";
   }
@@ -1930,7 +2154,7 @@
       lead.textContent =
         "총 " +
         total +
-        "건이 대기 중입니다. 전체를 「분석 시작」하거나, 각 카드의 「분석 실행」으로 한 건씩 돌릴 수 있습니다.";
+        "건이 대기 중입니다. 전체를 「택소노미 초안 만들기」하거나, 각 행의 「이 페이지 읽기」로 한 건씩 돌릴 수 있습니다.";
       return;
     }
 
@@ -2288,7 +2512,7 @@
           job.status === "running" || (inActiveBatch && job.status === "queued");
         return (
           (index === firstDoneIndex
-            ? '<div class="job-group-divider"><span>완료된 분석</span><small>다시 실행하려면 각 항목의 「다시 분석」을 누르세요.</small></div>'
+            ? '<div class="job-group-divider"><span>완료된 작업</span><small>다시 실행하려면 각 항목의 「이 페이지 다시 읽기」를 누르세요.</small></div>'
             : "") +
           '<div class="' + cardCls + '">' +
           '<div class="job-card-head">' +
@@ -2307,7 +2531,7 @@
           (canRunQueued
             ? '<button type="button" class="btn-primary job-run-one" data-job-key="' +
               escapeAttr(key) +
-              '" title="이 URL만 지금 분석합니다">분석 실행</button>'
+              '" title="이 URL만 지금 읽습니다">이 페이지 읽기</button>'
             : "") +
           (job.status === "queued" && inWaitPool
             ? '<button type="button" class="btn-secondary" disabled title="대기풀에 들어가 있습니다">대기풀</button>'
@@ -2334,7 +2558,7 @@
                 ? " disabled title=\"이미 대기풀에 들어가 있습니다\""
                 : ' title="지금 분석 중이면 대기풀에 넣습니다"') +
               ">" +
-              (inWaitPool ? "대기풀" : "다시 분석") +
+              (inWaitPool ? "대기풀" : "이 페이지 다시 읽기") +
               "</button>"
             : "") +
           (hideRemove
@@ -2379,7 +2603,7 @@
     if (startButton && !analyzeRunning) {
       startButton.disabled = pendingCount === 0;
       startButton.textContent =
-        pendingCount > 0 ? `미완료 ${pendingCount}건 분석 시작` : "분석할 새 항목 없음";
+        pendingCount > 0 ? `미완료 ${pendingCount}건 초안 만들기` : "택소노미 초안 만들기";
     }
     renderAnalyzeLead();
   }
@@ -3099,6 +3323,7 @@
    */
   window.__WIZARD_AFTER_TOUR__ = () => {
     projectLoading = false;
+    showProjectBrowse();
     renderProjects();
     renderDiscoverPick();
     setDiscoverStatus("", false);
@@ -3201,6 +3426,21 @@
   $("wizard-prev")?.addEventListener("click", onPrev);
   $("new-wizard-btn")?.addEventListener("click", resetWizard);
   $("project-create-btn")?.addEventListener("click", () => createProjectFromInput());
+  $("create-project-cancel")?.addEventListener("click", () => closeCreateProjectDialog());
+  $("project-create-dialog")?.addEventListener("cancel", () => closeCreateProjectDialog());
+  $("create-url-add")?.addEventListener("click", () => {
+    createUrlDrafts.push("");
+    renderCreateUrlRows();
+    const inputs = document.querySelectorAll("#create-url-rows input");
+    inputs[inputs.length - 1]?.focus();
+  });
+  $("create-project-submit")?.addEventListener("click", () => void submitCreateProject());
+  $("create-project-name")?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      void submitCreateProject();
+    }
+  });
   $("project-settings-btn")?.addEventListener("click", () => showProjectSettings(false));
   $("project-settings-close")?.addEventListener("click", closeProjectSettings);
   $("project-settings-cancel")?.addEventListener("click", closeProjectSettings);

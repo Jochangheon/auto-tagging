@@ -60,8 +60,7 @@ export function actionCaptureApiUrl(jobId: string, fileKey: string): string {
 }
 
 /**
- * Annotate the full page PNG with each member box so the taxonomy table
- * shows where the action sits on the screen (not a tight crop).
+ * Square crop focused on the action boxes, with a highlight overlay.
  */
 export async function cropActionGroupFromPagePng(
   jobId: string,
@@ -79,17 +78,42 @@ export async function cropActionGroupFromPagePng(
     const imgH = meta.height ?? 0;
     if (imgW <= 0 || imgH <= 0) return null;
 
-    const maxW = 1400;
-    const maxH = 2400;
-    const scale = Math.min(1, maxW / imgW, maxH / imgH);
-    const outW = Math.max(2, Math.round(imgW * scale));
-    const outH = Math.max(2, Math.round(imgH * scale));
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const b of valid) {
+      minX = Math.min(minX, b.x);
+      minY = Math.min(minY, b.y);
+      maxX = Math.max(maxX, b.x + b.w);
+      maxY = Math.max(maxY, b.y + b.h);
+    }
+    const unionW = Math.max(1, maxX - minX);
+    const unionH = Math.max(1, maxY - minY);
+    const unionMax = Math.max(unionW, unionH);
+    const pad =
+      options?.pad ??
+      (unionMax < 40 ? 180 : Math.max(80, Math.round(unionMax * 0.45)));
+    const cx = (minX + maxX) / 2;
+    const cy = (minY + maxY) / 2;
+    const wanted = Math.max(unionW + pad * 2, unionH + pad * 2);
+    const minSide = Math.min(320, imgW, imgH);
+    const side = Math.max(minSide, Math.min(wanted, imgW, imgH));
+    let left = Math.round(cx - side / 2);
+    let top = Math.round(cy - side / 2);
+    left = Math.max(0, Math.min(left, imgW - side));
+    top = Math.max(0, Math.min(top, imgH - side));
+    const extractW = Math.min(side, imgW - left);
+    const extractH = Math.min(side, imgH - top);
+    const sq = Math.max(2, Math.min(extractW, extractH));
 
+    const outSize = 800;
+    const scale = outSize / sq;
     const border = Math.max(3, Math.round(4 * scale));
     const rects = valid
       .map((b) => {
-        const x = Math.max(0, Math.floor(b.x * scale));
-        const y = Math.max(0, Math.floor(b.y * scale));
+        const x = Math.max(0, Math.floor((b.x - left) * scale));
+        const y = Math.max(0, Math.floor((b.y - top) * scale));
         const w = Math.max(4, Math.floor(b.w * scale));
         const h = Math.max(4, Math.floor(b.h * scale));
         return (
@@ -99,12 +123,12 @@ export async function cropActionGroupFromPagePng(
       })
       .join("");
     const overlaySvg = Buffer.from(
-      `<svg width="${outW}" height="${outH}" xmlns="http://www.w3.org/2000/svg">${rects}</svg>`
+      `<svg width="${outSize}" height="${outSize}" xmlns="http://www.w3.org/2000/svg">${rects}</svg>`
     );
 
-    const pipeline = sharp(pagePath);
-    if (scale < 1) pipeline.resize(outW, outH, { fit: "fill" });
-    const buffer = await pipeline
+    const buffer = await sharp(pagePath)
+      .extract({ left, top, width: sq, height: sq })
+      .resize(outSize, outSize, { fit: "fill" })
       .composite([{ input: overlaySvg, top: 0, left: 0 }])
       .png({ compressionLevel: 8 })
       .toBuffer();
@@ -117,8 +141,8 @@ export async function cropActionGroupFromPagePng(
     await writeFile(absPath, buffer);
     return {
       buffer,
-      width: outW,
-      height: outH,
+      width: outSize,
+      height: outSize,
       absPath,
       url: actionCaptureApiUrl(jobId, fileKey),
     };

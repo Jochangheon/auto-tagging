@@ -1,5 +1,5 @@
 ﻿/** UI 릴리스 버전 — 기능 변경 시 1.2, 1.3 … 로 올릴 것 */
-    const APP_VERSION = "3.5";
+    const APP_VERSION = "3.6";
     const appVersionEl = document.getElementById("app-version");
     if (appVersionEl) appVersionEl.textContent = "v" + APP_VERSION;
 
@@ -398,10 +398,19 @@
       return "페이지명 : " + name;
     }
 
+    let taxonomyImageZoom = 1;
+
+    function setTaxonomyImageZoom(next) {
+      const img = document.getElementById("taxonomy-image-dialog-img");
+      taxonomyImageZoom = Math.min(6, Math.max(1, next));
+      if (img) img.style.transform = "scale(" + taxonomyImageZoom + ")";
+    }
+
     function openTaxonomyImagePopup(url) {
       const dlg = document.getElementById("taxonomy-image-dialog");
       const img = document.getElementById("taxonomy-image-dialog-img");
       if (!dlg || !img || !url) return;
+      setTaxonomyImageZoom(1);
       img.src = url;
       if (typeof dlg.showModal === "function") dlg.showModal();
       else dlg.setAttribute("open", "");
@@ -853,14 +862,16 @@
       const bulkBar = document.getElementById("taxonomy-bulk-bar");
       const saveBar = document.getElementById("taxonomy-save-bar");
       const bulkCount = document.getElementById("taxonomy-bulk-count");
+      const bulkApply = document.getElementById("taxonomy-bulk-apply");
       const dirtyCount = document.getElementById("taxonomy-dirty-count");
       const selected = taxonomySelectedKeys.size;
       if (bulkBar) {
-        bulkBar.hidden = false;
+        bulkBar.hidden = selected === 0;
         if (bulkCount) {
-          bulkCount.textContent = selected
-            ? selected + "개 선택 · 한번에 수정"
-            : "한번에 수정하기";
+          bulkCount.textContent = selected ? selected + "개 선택" : "선택한 행 수정";
+        }
+        if (bulkApply) {
+          bulkApply.textContent = selected ? selected + "개에 적용" : "선택한 행에 적용";
         }
       }
       const dirty = taxonomyDirtyCount();
@@ -989,11 +1000,13 @@
         setStatus("바꿀 카테고리·액션·라벨을 하나 이상 입력하세요.", true);
         return;
       }
+      if (!taxonomySelectedKeys.size) {
+        setStatus("먼저 표에서 바꿀 행을 체크하세요.", true);
+        return;
+      }
       const tab = getActiveTaxonomyTab();
       const visible = (tab?.event_rows || []).filter((r) => r.event_name !== "페이지뷰");
-      const targets = taxonomySelectedKeys.size
-        ? visible.filter((r) => taxonomySelectedKeys.has(r.row_key))
-        : visible;
+      const targets = visible.filter((r) => taxonomySelectedKeys.has(r.row_key));
       let applied = 0;
       for (const row of targets) {
         if (cat) setTaxonomyDraftField(row.row_key, "page_category", cat);
@@ -1099,7 +1112,9 @@
         const thumb = imageUrl
           ? "<button type='button' class='taxonomy-action-thumb-link' data-image-url='" +
             escapeAttr(imageUrl) +
-            "' title='화면 이미지 크게 보기'><img class='taxonomy-action-thumb' src='" +
+            "' title='화면 이미지 크게 보기'><img class='taxonomy-action-thumb" +
+            (isPageView ? " is-page" : "") +
+            "' src='" +
             escapeAttr(imageUrl) +
             "' alt='" +
             (isPageView ? "페이지 화면" : "액션 영역") +
@@ -4378,14 +4393,29 @@
 
     const taxonomyImageDialog = document.getElementById("taxonomy-image-dialog");
     const taxonomyImageDialogClose = document.getElementById("taxonomy-image-dialog-close");
+    const taxonomyImageStage = document.getElementById("taxonomy-image-dialog-stage");
     taxonomyImageDialogClose?.addEventListener("click", () => taxonomyImageDialog?.close());
     taxonomyImageDialog?.addEventListener("click", (e) => {
       if (e.target === taxonomyImageDialog) taxonomyImageDialog.close();
     });
     taxonomyImageDialog?.addEventListener("close", () => {
       const img = document.getElementById("taxonomy-image-dialog-img");
-      if (img) img.removeAttribute("src");
+      if (img) {
+        img.removeAttribute("src");
+        img.style.transform = "";
+      }
+      taxonomyImageZoom = 1;
     });
+    taxonomyImageStage?.addEventListener(
+      "wheel",
+      (e) => {
+        if (!taxonomyImageDialog?.open) return;
+        e.preventDefault();
+        const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+        setTaxonomyImageZoom(taxonomyImageZoom * factor);
+      },
+      { passive: false }
+    );
 
     document.getElementById("taxonomy-bulk-apply")?.addEventListener("click", () => {
       applyTaxonomyBulkFields();

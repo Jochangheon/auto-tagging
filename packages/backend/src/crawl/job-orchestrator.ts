@@ -860,6 +860,27 @@ async function executeViewOnlyLiveViewInner(
   return { session, live_view_url: liveViewUrl };
 }
 
+/** Open the URL and take a page PNG — no tagging. Used for project covers. */
+export async function executePreviewCapture(
+  url: string,
+  viewport: ViewportMode
+): Promise<{ job_id: string; capture_url: string | null }> {
+  const { job_id } = startDevAnalyzeJob(url);
+  return withAcquiredFirecrawlKey(job_id, async () => {
+    const session = await bootstrapSession(url);
+    try {
+      await ensureRemoteLiveViewport(session, viewport);
+      await waitForPageReady(session.scrapeId);
+      const shot = await capturePageScreenshot(session, job_id, viewport, url, {
+        skipHeavyPrep: true,
+      });
+      return { job_id, capture_url: shot?.url ?? null };
+    } finally {
+      await stopInteraction(session.scrapeId).catch(() => {});
+    }
+  });
+}
+
 /** Create job and return id immediately — pipeline runs via executeDevAnalyzeJob. */
 export function startDevAnalyzeJob(url: string): { job_id: string } {
   const job = createJob(url);

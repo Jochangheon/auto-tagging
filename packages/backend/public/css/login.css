@@ -1,10 +1,11 @@
 :root {
-  --bg: #0f172a;
+  --bg: #fafafa;
   --card: #ffffff;
-  --text: #0f172a;
-  --muted: #64748b;
-  --line: #e2e8f0;
-  --ms: #2f2f2f;
+  --text: #18181b;
+  --muted: #71717a;
+  --line: #eaeaea;
+  --accent: #1d4ed8;
+  --ms: #18181b;
 }
 
 * { box-sizing: border-box; }
@@ -12,11 +13,8 @@
 html, body {
   margin: 0;
   min-height: 100%;
-  font-family: "Pretendard", system-ui, sans-serif;
-  background:
-    radial-gradient(1200px 600px at 20% -10%, #1d4ed8 0%, transparent 55%),
-    radial-gradient(900px 500px at 100% 0%, #0ea5e9 0%, transparent 50%),
-    var(--bg);
+  font-family: "Pretendard", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  background: var(--bg);
   color: var(--text);
 }
 
@@ -28,27 +26,21 @@ html, body {
 }
 
 .login-card {
-  width: min(440px, 100%);
+  width: min(400px, 100%);
   background: var(--card);
-  border-radius: 20px;
-  padding: 36px 32px 28px;
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 40px 32px 32px;
 }
 
-.login-brand {
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  color: var(--muted);
-  margin-bottom: 18px;
-}
-
-.login-brand span { color: #2563eb; }
+.login-brand { display: none; }
 
 .login-card h1 {
   margin: 0 0 8px;
-  font-size: 26px;
-  letter-spacing: -0.02em;
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  word-break: keep-all;
 }
 
 .login-lead {
@@ -56,6 +48,7 @@ html, body {
   color: var(--muted);
   font-size: 14px;
   line-height: 1.55;
+  word-break: keep-all;
 }
 
 .ms-login-btn {
@@ -65,16 +58,15 @@ html, body {
   gap: 12px;
   width: 100%;
   min-height: 48px;
-  border-radius: 10px;
+  border-radius: 999px;
   background: var(--ms);
   color: #fff;
   text-decoration: none;
-  font-weight: 650;
+  font-weight: 600;
   font-size: 15px;
-  transition: background 0.15s ease, transform 0.15s ease;
 }
 
-.ms-login-btn:hover { background: #111; transform: translateY(-1px); }
+.ms-login-btn:hover { background: #27272a; }
 
 .ms-logo {
   display: grid;
@@ -108,74 +100,66 @@ html, body {
 .setup-panel summary {
   cursor: pointer;
   color: var(--muted);
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 12px;
+  font-weight: 500;
 }
 
 .setup-admin-note {
   margin: 0 0 12px;
   padding: 10px 12px;
   border-radius: 8px;
-  background: #f1f5f9;
-  color: #475569;
+  background: #f4f4f5;
+  color: #52525b;
   font-size: 12px;
   line-height: 1.5;
 }
 
 .setup-admin-note code {
   font-size: 11px;
-  background: #e2e8f0;
+  background: #e4e4e7;
   padding: 1px 4px;
   border-radius: 4px;
 }
 
-.setup-panel[open] summary { margin-bottom: 12px; }
-
 .setup-steps {
-  margin: 0 0 14px;
+  margin: 0 0 16px;
   padding-left: 18px;
   color: var(--muted);
   font-size: 12px;
   line-height: 1.55;
 }
 
-.setup-steps a { color: #2563eb; }
-
 .setup-field {
   display: grid;
-  gap: 6px;
+  gap: 4px;
   margin-bottom: 10px;
   font-size: 12px;
-  font-weight: 600;
-  color: #334155;
+  color: var(--muted);
 }
 
 .setup-field input {
   width: 100%;
+  padding: 8px 10px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  padding: 10px 12px;
   font: inherit;
-  font-weight: 500;
-  font-size: 13px;
 }
 
 .setup-save {
-  width: 100%;
   margin-top: 4px;
+  min-height: 40px;
+  padding: 0 14px;
   border: none;
-  border-radius: 8px;
-  padding: 11px 14px;
-  background: #2563eb;
+  border-radius: 999px;
+  background: var(--accent);
   color: #fff;
   font: inherit;
-  font-weight: 650;
+  font-weight: 600;
   cursor: pointer;
 }
 
 .setup-msg {
-  margin: 10px 0 0;
+  margin: 8px 0 0;
   font-size: 12px;
   color: var(--muted);
-  min-height: 1.2em;
 }

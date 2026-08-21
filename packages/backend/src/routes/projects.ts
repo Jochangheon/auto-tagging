@@ -30,8 +30,29 @@ function cleanState(input: unknown): ProjectWizardState {
     step: Math.max(1, Math.min(5, Number(raw.step) || 1)),
     urls: Array.isArray(raw.urls) ? raw.urls.slice(0, 500) : [],
     jobs: Array.isArray(raw.jobs) ? raw.jobs.slice(0, 1000) : [],
+    cover_url: typeof raw.cover_url === "string" && raw.cover_url.trim() ? raw.cover_url.trim() : null,
     savedAt: new Date().toISOString(),
   };
+}
+
+function coverUrlFromJobs(jobs: Array<Record<string, unknown>>): string | null {
+  for (const job of jobs) {
+    if (job.status !== "done") continue;
+    if (typeof job.capture_url === "string" && job.capture_url.trim()) {
+      return job.capture_url.trim();
+    }
+    if (typeof job.job_id === "string" && job.job_id.trim()) {
+      const vp = job.viewport === "mo" ? "mo" : "pc";
+      return `/api/dev/captures/${job.job_id.trim()}/${vp}.png`;
+    }
+  }
+  return null;
+}
+
+function parseViewports(input: unknown): Array<"pc" | "mo"> {
+  const raw = Array.isArray(input) ? input : [];
+  const viewports = raw.filter((v): v is "pc" | "mo" => v === "pc" || v === "mo");
+  return viewports.length ? [...new Set(viewports)] : ["pc"];
 }
 
 function projectSummary(row: Awaited<ReturnType<typeof listProjects>>[number]) {
@@ -47,6 +68,7 @@ function projectSummary(row: Awaited<ReturnType<typeof listProjects>>[number]) {
     name: row.name,
     page_count: jobs.length || inputCount,
     analyzed_count: jobs.filter((j) => j.status === "done").length,
+    cover_url: state.cover_url || coverUrlFromJobs(jobs),
     current_step: state.step || 1,
     updated_at: row.updated_at,
     last_opened_at: row.last_opened_at,
@@ -166,9 +188,13 @@ projectsRouter.patch("/:id/settings", async (req, res) => {
     if (!name) {
       return res.status(400).json({ ok: false, error: "project_name_required" });
     }
+    const rawOptions =
+      req.body?.options && typeof req.body.options === "object"
+        ? (req.body.options as Record<string, unknown>)
+        : {};
     const options: ProjectOptions = {
-      default_viewports: ["pc"],
-      cache_mode: "reuse",
+      default_viewports: parseViewports(rawOptions.default_viewports),
+      cache_mode: rawOptions.cache_mode === "force" ? "force" : "reuse",
     };
     const project = await saveProjectSettings({
       userId,

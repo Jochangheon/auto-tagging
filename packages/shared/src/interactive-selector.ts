@@ -2,7 +2,7 @@
 import { BANNER_INTERACTIVE_SELECTOR } from "./banner-detect.js";
 
 export const INTERACTIVE_SELECTOR =
-  "button, a[href], a[class*='btn'], a[class*='button'], a[role='button'], [role='button'], [role='link'], [role='menuitem'], input, select, textarea, label, nav a, header button, header a, [onclick], [tabindex]:not([tabindex='-1']), summary, [role='tab'], [role='option'], [role='checkbox'], [role='radio'], [role='switch'], area[href], footer button, footer a, [data-action], " +
+  "button, a[href], a[class*='btn'], a[class*='button'], a[role='button'], [role='button'], [role='link'], [role='menuitem'], input:not([type='hidden']), select, textarea, label, nav a, header button, header a, [onclick], summary, [role='tab'], [role='option'], [role='checkbox'], [role='radio'], [role='switch'], area[href], footer button, footer a, [data-action], " +
   BANNER_INTERACTIVE_SELECTOR;
 
 /** Cheerio-only hint for pointer-styled blocks (no computed style in cheerio). */
@@ -235,13 +235,12 @@ function resolveElementLabel(el) {
 function isPointerLike(el) {
   const tag = el.tagName.toLowerCase();
   if (tag !== "div" && tag !== "span" && tag !== "li") return false;
-  const cls = String(el.className || "");
-  if (cls.includes("cursor-pointer")) return true;
-  try {
-    return window.getComputedStyle(el).cursor === "pointer";
-  } catch (_) {
-    return false;
+  const role = String(el.getAttribute("role") || "").toLowerCase();
+  if (role === "button" || role === "link" || role === "menuitem" || role === "tab" || role === "option") {
+    return true;
   }
+  if (el.hasAttribute("onclick") || el.getAttribute("data-action")) return true;
+  return false;
 }
 
 function hasCollectedInteractiveChild(el, interactiveSel) {

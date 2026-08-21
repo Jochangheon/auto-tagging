@@ -115,7 +115,7 @@ async function styleEventSheet(
     for (let idx = 0; idx < rows.length; idx += 1) {
       const row = rows[idx]!;
       const excelRow = ws.addRow(eventRowValues(row));
-      excelRow.height = 128;
+      excelRow.height = 140;
       excelRow.eachCell((cell, colNumber) => {
         cell.font = BODY_FONT;
         cell.border = THIN_BORDER;
@@ -141,7 +141,7 @@ async function styleEventSheet(
         const excelRowNumber = idx + 2; // 1-based, header is row 1
         ws.addImage(imageId, {
           tl: { col: 6, row: excelRowNumber - 1 },
-          ext: { width: 220, height: 120 },
+          ext: { width: 160, height: 160 },
           editAs: "oneCell",
         });
       } catch {

@@ -13,13 +13,13 @@ export const BANNER_SECTION_HEADING_RE =
 export const NON_BANNER_SECTION_RE =
   /추천|상품|product|recommend|card|wish|장바구니|혜택|프로모션|이벤트\s*배너/i;
 
-/** Extra interactive targets inside carousels (additive — never used to skip other elements). */
+/** Hero slide containers — category/context hint only, not tagging targets. */
 export const BANNER_SLIDE_SELECTOR =
   "[class*='main-banner-swiper'] .swiper-slide, [class*='main-banner'] .swiper-slide, [class*='hero-banner'] .swiper-slide, [class*='rolling-banner'] .swiper-slide, [class*='visual-banner'] .swiper-slide, [class*='main-visual'] .swiper-slide";
 
+/** Carousel controls and in-slide links — not whole slides or pagination dots. */
 export const BANNER_INTERACTIVE_SELECTOR =
-  BANNER_SLIDE_SELECTOR +
-  ", [class*='deal-carousel'] a, [class*='carousel'] a[class*='btn'], [class*='carousel'] a[class*='button'], [class*='swiper-button'], .swiper-pagination-bullet, [class*='swiper-pagination'] button, [class*='swiper-pagination'] [role='button'], [class*='carousel'] button, [class*='carousel'] a[href], [class*='slider'] button, [class*='slider'] a[href], [class*='slick-'] button, [class*='splide'] button, [class*='splide'] a[href]";
+  "[class*='deal-carousel'] a, [class*='carousel'] a[class*='btn'], [class*='carousel'] a[class*='button'], [class*='swiper-button'], [class*='swiper-pagination'] button, [class*='swiper-pagination'] [role='button'], [class*='carousel'] button, [class*='carousel'] a[href], [class*='slider'] button, [class*='slider'] a[href], [class*='slick-'] button, [class*='splide'] button, [class*='splide'] a[href]";
 
 export function isBannerDomContext(ctx: DomPathContext | null | undefined): boolean {
   if (!ctx) return false;
